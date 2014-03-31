@@ -91,8 +91,10 @@ bundle agent test
 bundle agent check
 {
   vars:
-      "expected" string => "#DO NOT EDIT - MANAGED FILE
+      "expected_successful_render" string => "#DO NOT EDIT - MANAGED FILE
 string but template expects list of strings$(const.n)";
+
+      "expected_failed_render" string => "# Set ";
 
       "actual" string => readfile("$(G.testfile)", 4096);
 
@@ -107,7 +109,14 @@ string but template expects list of strings$(const.n)";
   classes:
       "ok_different_inode" expression => strcmp("3", "num_unique_inodes");
 
-      "ok_content" expression => regcmp("$(expected)", "$(actual)");
+      # I am not sure of the desired behaviour of the template rendering in
+      # this case. If it is supposed to error then we should have the content
+      # of the file from init_inode2. If it is not supposed to be an error then
+      # we should have the complete expected rendered content.
+      "ok_content_render_success" expression => regcmp("$(expected_succussful_render)", "$(actual)");
+      "ok_content_render_fail" expression => regcmp("$(expected_failed_render)", "$(actual)");
+
+      "ok_content" or => { "ok_content_render_success", "ok_content_render_fail" };
 
       "ok" and => { ok_different_inode, ok_content };
 
@@ -115,14 +124,20 @@ string but template expects list of strings$(const.n)";
     DEBUG::
       "inode: $(inodes)";
       "unique inode: $(unique_inodes)";
-      "OK: Expected  '$(expected)' == '$(actual)'"
-      ifvarclass => "ok_content";
+      "OK: Expected  '$(expected_successful_render)' == '$(actual)'"
+      ifvarclass => "ok_content_render_success";
+
+      "OK: Expected  '$(expected_failed_render)' == '$(actual)'"
+      ifvarclass => "ok_content_render_fail";
 
       "OK: Expected different inode for $(G.testfile) in init_inode1, init_inode2 and check after template rendering."
       ifvarclass => "ok_different_inode";
 
-      "FAIL: Expected '$(expected)' <> '$(actual)'"
-      ifvarclass => "!ok_content";
+      "FAIL: Expected '$(expected_successful_render)' <> '$(actual)'"
+      ifvarclass => "!ok_content_render_success.!ok_content";
+
+      "FAIL: Expected '$(expected_failed_render)' <> '$(actual)'"
+      ifvarclass => "!ok_content_render_fail.!ok_content";
 
       "FAIL: Expected different inode for $(G.testfile) in init_inode1, init_inode2 and check after template rendering.
 Got init_inode1: $(init_inode1.testfile_inode), init_inode2: $(init_inode2.testfile_inode), check: $(check.testfile_inode)"
