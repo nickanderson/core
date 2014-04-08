@@ -22,9 +22,12 @@ ltmain.sh
 m4/libtool.m4
 m4/lt*.m4
 missing
+revision
 stamp-h1
 ylwrap
 test-driver
+
+configure_flags.env
 
 # docs
 
@@ -76,9 +79,10 @@ cf-runagent/cf-runagent
 cf-runagent/cf-runagent.exe
 cf-serverd/cf-serverd
 cf-serverd/cf-serverd.exe
-cf-gendoc/cf-gendoc
-cf-gendoc/cf-gendoc.exe
+cf-upgrade/cf-upgrade
+cf-upgrade/cf-upgrade.exe
 ext/rpmvercmp
+ext/rpmvercmp.exe
 
 # autogen
 
@@ -109,6 +113,7 @@ tests/*/*.trs
 
 tests/unit/*_test
 tests/unit/exec-config-test
+tests/unit/rb-tree-test
 
 # load tests
 
@@ -135,7 +140,13 @@ galaxy
 # tags
 
 TAGS
+tags
 cscope.*
+
+# vim
+*~
+.*.swp
+.*.swo
 
 # emacs
 

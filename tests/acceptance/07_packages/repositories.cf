@@ -1,0 +1,44 @@
+# Tests that package upgrade works properly
+
+body common control
+{
+      inputs => { "../default.cf.sub" };
+      bundlesequence => { default("$(this.promise_filename)") };
+      version => "1.0";
+
+}
+
+bundle agent init
+{
+  methods:
+      "make" usebundle => cfe_makefile("$(G.testfile).expected",
+                                       "
+filerepo DELETE delete-exact-version-2.2.3.i386.rpm
+filerepo ADD $(G.cwd)/./07_packages/test_repository/install-greaterthan-version-2.2.3.i386.rpm
+filerepo ADD $(G.cwd)/./07_packages/test_repository/install-greaterorequal-version-2.2.3.i386.rpm
+filerepo ADD $(G.cwd)/./07_packages/test_repository/install-lessthan-version-2.2.3.i386.rpm
+filerepo ADD $(G.cwd)/./07_packages/test_repository/install-lessorequal-version-2.2.3.i386.rpm
+filerepo ADD $(G.cwd)/./07_packages/test_repository/install-exact-version-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-greaterthan-version-already-greater-installed-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-greaterthan-version-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-greaterorequal-version-already-greater-installed-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-greaterorequal-version-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-lessthan-version-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-lessorequal-version-2.2.3.i386.rpm
+filerepo UPDATE $(G.cwd)/./07_packages/test_repository/update-to-exact-version-2.2.3.i386.rpm");
+
+}
+
+bundle agent test
+{
+  methods:
+      "run" usebundle => dcs_runagent("$(this.promise_filename).sub");
+}
+
+bundle agent check
+{
+  methods:
+    "any" usebundle => sorted_check_diff("$(G.testfile)", "$(G.testfile).expected", "$(this.promise_filename)");
+}
+### PROJECT_ID: core
+### CATEGORY_ID: 29
