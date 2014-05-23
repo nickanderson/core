@@ -1,6 +1,6 @@
-#include "cf3.defs.h"
-#include "dbm_api.h"
-#include "lastseen.h"
+#include <cf3.defs.h>
+#include <dbm_api.h>
+#include <lastseen.h>
 
 char CFWORKDIR[CF_BUFSIZE] = "/tmp";
 
@@ -38,36 +38,17 @@ int main()
 }
 
 /* STUBS */
-
-void __ProgrammingError(const char *file, int lineno, const char *format, ...)
-{
-    exit(42);
-}
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 void FatalError(char *s, ...)
 {
     exit(42);
 }
 
-void Log(LogLevel level, const char *fmt, ...)
-{
-    fprintf(stderr, "CFOUT<%d>: ", level);
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    fprintf(stderr, "\n");
-}
-
-const char *GetErrorStr(void)
-{
-    return strerror(errno);
-}
-
 HashMethod CF_DEFAULT_DIGEST;
-const char *DAY_TEXT[] = {};
-const char *MONTH_TEXT[] = {};
-const char *SHIFT_TEXT[] = {};
+const char *const DAY_TEXT[] = {};
+const char *const MONTH_TEXT[] = {};
+const char *const SHIFT_TEXT[] = {};
 pthread_mutex_t *cft_output;
 char VIPADDRESS[CF_MAX_IP_LEN];
 RSA *PUBKEY;
@@ -95,16 +76,6 @@ char *MapAddress(char *addr)
 }
 
 char *HashPrintSafe(HashMethod type, unsigned char digest[EVP_MAX_MD_SIZE + 1], char buffer[EVP_MAX_MD_SIZE * 4])
-{
-    exit(42);
-}
-
-int ThreadLock(pthread_mutex_t *name)
-{
-    exit(42);
-}
-
-int ThreadUnlock(pthread_mutex_t *name)
 {
     exit(42);
 }

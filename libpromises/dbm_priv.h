@@ -17,7 +17,7 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
@@ -44,10 +44,11 @@ const char *DBPrivGetFileExtension(void);
  * - NULL in case of generic error
  * - DB_PRIV_DATABASE_BROKEN in case database file is broken, need to be moved
       away and attempt to open database again should be performed.
- * - valid pointer to DBPriv * in case database was opened succesfully.
+ * - valid pointer to DBPriv * in case database was opened successfully.
  */
-DBPriv *DBPrivOpenDB(const char *dbpath);
+DBPriv *DBPrivOpenDB(const char *dbpath, dbid id);
 void DBPrivCloseDB(DBPriv *hdbp);
+void DBPrivCommit(DBPriv *hdbp);
 
 bool DBPrivHasKey(DBPriv *db, const void *key, int key_size);
 int DBPrivGetValueSize(DBPriv *db, const void *key, int key_size);

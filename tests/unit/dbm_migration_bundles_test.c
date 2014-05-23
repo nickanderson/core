@@ -1,7 +1,7 @@
-#include "cf3.defs.h"
-#include "dbm_api.h"
-#include "test.h"
-#include "lastseen.h"
+#include <cf3.defs.h>
+#include <dbm_api.h>
+#include <test.h>
+#include <lastseen.h>
 
 #include <setjmp.h>
 #include <cmockery.h>
@@ -148,6 +148,9 @@ void test_migrate_unqualified_names(void)
 
 int main()
 {
+#ifdef LMDB
+    return 0;
+#else
     tests_setup();
 
     const UnitTest tests[] =
@@ -163,35 +166,13 @@ int main()
     tests_teardown();
 
     return ret;
+#endif
 }
 
 /* STUBS */
-const char *DAY_TEXT[] = {};
-const char *MONTH_TEXT[] = {};
-
-void __ProgrammingError(const char *file, int lineno, const char *format, ...)
-{
-    fail();
-    exit(42);
-}
 
 void FatalError(char *s, ...)
 {
     fail();
     exit(42);
-}
-
-void Log(LogLevel level, const char *fmt, ...)
-{
-    fprintf(stderr, "CFOUT<%d>: ", level);
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    fprintf(stderr, "\n");
-}
-
-const char *GetErrorStr(void)
-{
-    return strerror(errno);
 }
