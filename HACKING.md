@@ -15,8 +15,8 @@ Top reasons pull-requests are rejected or delayed
 
 * Code does not follow style guidlines. (See section on Coding Style)
 
-* Pull request addresses several disperate issues. In general, smaller pull-requests are better
-because they are easier to review and stay mergable longer.
+* Pull request addresses several disparate issues. In general, smaller pull-requests are better
+because they are easier to review and stay mergeable longer.
 
 * Messy commit log. Tidy up the commit log by squashing commits. Write good commit messages:
 One line summary at the top, followed by an optional detailing paragraphs. Please reference
@@ -78,7 +78,7 @@ This is the remainder of the old src directory, that which has not been categori
 for the project remains to leave *libpromises* as a component for evaluation.
 
 - *cf3.defs.h*: Contains structure definitions used widely.
-- *env_context.h*: Header for EvalContext, keeper of evaluation state.
+- *eval_context.h*: Header for EvalContext, keeper of evaluation state.
 - *dbm_api.h*: Local database for agents.
 - *mod_.c*: Syntax definitions for all promise types (actuation modules).
 - *syntax.h*: Syntax utilities and type checking.
@@ -158,12 +158,33 @@ suitable for library writers.
 
 * Spaces, not tabs.
 
+* Always use typedefs, no "struct X", or "enum Y" are allowed. Types
+  defined with typedef should be in camelcase and no trailing "_t",
+  "_f" etc.
+
 * Constify what can be. Don't use global variables.
 
 * Keep tidy header files and document using Doxygen (within reason).
 
 * http://en.wikipedia.org/wiki/Golden_Rule
 
+
+C Platform Macros
+-----------------
+
+It's important to have portability in a consistent way.  Use these platform macros in C code.
+
+* Any Windows system: Use `_WIN32`.  Don't use `NT`.
+* mingw-based Win32 build: Use `__MINGW32__`.  Don't use `MINGW`.
+* Cygwin-based Win32 build: Use `__CYGWIN__`.  Don't use `CFCYG`.
+* OS X: Use `__APPLE__`.  Don't use `DARWIN`.
+* FreeBSD: Use `__FreeBSD__`.  Don't use `FREEBSD`.
+* NetBSD: Use `__NetBSD__`.  Don't use `NETBSD`.
+* OpenBSD: Use `__OpenBSD__`.  Don't use `OPENBSD`.
+* AIX: Use `_AIX`.  Don't use `AIX`.
+* Solaris: Use `__sun`. Don't use `SOLARIS`.
+* Linux: Use `__linux__`.  Don't use `LINUX`.
+* HP/UX: Use `__hpux` (two underscores!).  Don't use `hpux`.
 
 Output Message Conventions
 --------------------------
@@ -197,13 +218,30 @@ It is extremely important to have automated tests for all code, and normally all
 covered by tests, though sometimes it can be hard to mock up the environment.
 
 There are two types of tests in CFEngine. *Unit tests* are generally preferable to *acceptance tests* because
-they are more targeted and take less time to run. All tests are run using *make check*.
+they are more targeted and take less time to run. Most tests can be run using *make check* (see Unsafe tests
+below).
 
 * *Unit tests*. Unit tests are a great way of testing some new module (header file). Ideally, the new functionality
 is written so that the environment can be easily injected and results readily verified.
 
 * *Acceptance tests*. These are tests that run *cf-agent* on a policy file that contains *test* and *check* bundles,
 i.e. it uses CFEngine to both make a change and check it. See also script tests/acceptance/testall.
+
+
+Unsafe tests
+------------
+
+Note that some acceptance tests are considered to be unsafe because they modify the system they are running on. One
+example is the tests for the "users" promise type, which does real manipulation of the user database on the system.
+Due to their potential to do damage to the host system, these tests are not run unless explicitly asked for.
+Normally, this is something you would want to do in a VM, so you can restore the OS to a pristine state afterwards.
+
+To run all tests, including the unsafe ones, you either need to logged in as root or have "sudo" configured to not
+ask for a password. Then run the following:
+
+  $ UNSAFE_TESTS=1 GAINROOT=sudo make check
+
+Again: DO NOT do this on your main computer! Always use a test machine, preferable in a VM.
 
 
 Emacs users

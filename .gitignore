@@ -22,9 +22,12 @@ ltmain.sh
 m4/libtool.m4
 m4/lt*.m4
 missing
+revision
 stamp-h1
 ylwrap
 test-driver
+
+configure_flags.env
 
 # docs
 
@@ -76,9 +79,10 @@ cf-runagent/cf-runagent
 cf-runagent/cf-runagent.exe
 cf-serverd/cf-serverd
 cf-serverd/cf-serverd.exe
-cf-gendoc/cf-gendoc
-cf-gendoc/cf-gendoc.exe
+cf-upgrade/cf-upgrade
+cf-upgrade/cf-upgrade.exe
 ext/rpmvercmp
+ext/rpmvercmp.exe
 
 # autogen
 
@@ -95,8 +99,8 @@ libutils/config.post.h
 tests/acceptance/*.log
 tests/acceptance/.succeeded
 tests/acceptance/workdir
-tests/acceptance/mock-package-manager
-tests/acceptance/mock-package-manager.exe
+tests/acceptance/mock[-_]package[-_]manager
+tests/acceptance/mock[-_]package[-_]manager.exe
 tests/acceptance/xml-c14nize
 tests/acceptance//xml-c14nize.exe
 tests/acceptance/dnswrapper.so
@@ -109,11 +113,13 @@ tests/*/*.trs
 
 tests/unit/*_test
 tests/unit/exec-config-test
+tests/unit/rb-tree-test
 
 # load tests
 
 tests/load/db_load
 tests/load/lastseen_load
+tests/load/lastseen_threaded_load
 
 # examples
 examples/cfengine_stdlib.cf
@@ -135,7 +141,13 @@ galaxy
 # tags
 
 TAGS
+tags
 cscope.*
+
+# vim
+*~
+.*.swp
+.*.swo
 
 # emacs
 
