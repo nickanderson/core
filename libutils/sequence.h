@@ -17,7 +17,7 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
@@ -25,7 +25,7 @@
 #ifndef CFENGINE_SEQUENCE_H
 #define CFENGINE_SEQUENCE_H
 
-#include "platform.h"
+#include <platform.h>
 
 /**
   @brief Sequence data-structure.
@@ -87,6 +87,8 @@ void SeqSoftDestroy(Seq *seq);
   */
 typedef int (*SeqItemComparator) (const void *, const void *, void *user_data);
 
+void SeqSet(Seq *set, size_t index, void *item);
+
 /**
   @brief Append a new item to the Sequence
   @param seq [in] The Sequence to append to.
@@ -111,9 +113,29 @@ void SeqAppendSeq(Seq *seq, const Seq *items);
 void *SeqLookup(Seq *seq, const void *key, SeqItemComparator Compare);
 
 /**
+ * @brief Performs a binary search looking for the item matching the given key.
+ *        It is the programmer's responsibility to make sure that the sequence is already sorted.
+ * @param seq [in] The Sequence to search.
+ * @param key [in] The item to compare against.
+ * @param compare [in] Comparator function to use (return value has strcmp semantics).
+ * @returns A pointer to the found item, or NULL if not found.
+ */
+void *SeqBinaryLookup(Seq *seq, const void *key, SeqItemComparator Compare);
+
+/**
   @brief Linearly searches through the sequence and returns the index of the first matching object, or -1 if it doesn't exist.
   */
 ssize_t SeqIndexOf(Seq *seq, const void *key, SeqItemComparator Compare);
+
+/**
+ * @brief Performs a binary search looking for the item matching the given key.
+ *        It is the programmer's responsibility to make sure that the sequence is already sorted.
+ * @param seq [in] The Sequence to search.
+ * @param key [in] The item to compare against.
+ * @param compare [in] Comparator function to use (return value has strcmp semantics).
+ * @returns The index of the item, or -1 if it is not found.
+ */
+ssize_t SeqBinaryIndexOf(Seq *seq, const void *key, SeqItemComparator Compare);
 
 /**
   @brief Remove an inclusive range of items in the Sequence. A single item may be removed by specifiying start = end.
@@ -134,6 +156,13 @@ void SeqRemove(Seq *seq, size_t index);
   @param user_data [in] Pointer passed to the comparator function
   */
 void SeqSort(Seq *seq, SeqItemComparator compare, void *user_data);
+
+/**
+  @brief Returns a soft copy of the sequence sorted according to the given item comparator function.
+  @param compare [in] The comparator function used for sorting.
+  @param user_data [in] Pointer passed to the comparator function
+  */
+Seq *SeqSoftSort(const Seq *seq, SeqItemComparator compare, void *user_data);
 
 /**
   @brief Remove an inclusive range of item handles in the Sequence. A single item may be removed by specifiying start = end.
@@ -159,5 +188,20 @@ void SeqReverse(Seq *seq);
  * @param seed Seed value for the PRNG
  */
 void SeqShuffle(Seq *seq, unsigned int seed);
+
+/**
+ * @brief Remove all elements in sequence
+ * @param seq
+ */
+void SeqClear(Seq *seq);
+
+/**
+  @brief Get soft copy of sequence according to specified range
+  @param [in] seq Sequence select from
+  @param [in] start Start index of sub sequence.
+  @param [in] end End index which will be included into.
+  @return A pointer to sub sequence, NULL on error.
+  */
+Seq *SeqGetRange(const Seq *seq, size_t start, size_t end);
 
 #endif

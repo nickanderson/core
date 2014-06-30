@@ -17,7 +17,7 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
@@ -44,7 +44,9 @@
 #if defined(__CYGWIN__)
 # undef FD_SETSIZE
 #endif
-# define FD_SETSIZE 512         // increase select(2) FD limit from 64
+ /* Increase select(2) FD limit from 64. It's documented and valid to do it
+  * like that provided that we define it *before* including winsock2.h. */
+# define FD_SETSIZE 4096
 #else
 # define MAX_FILENAME 254
 #endif
@@ -63,20 +65,30 @@
 # include <objbase.h>           // for disphelper
 #endif
 
+/* Standard C. */
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
+#include <ctype.h>
+#include <assert.h>
+
+/* POSIX but available in all platforms. */
+#include <strings.h>
+#include <limits.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+/* We now require a pthreads implementation. */
+#include <pthread.h>
 
 #ifndef _GETOPT_H
-# include "../libcompat/getopt.h"
+# include <../libcompat/getopt.h>
 #endif
 
 #ifdef HAVE_STDLIB_H
 # include <stdlib.h>
 #endif
-#include <strings.h>
-#include <string.h>
-#include <ctype.h>
-#include <limits.h>
+
 #ifdef HAVE_UNAME
 # include <sys/utsname.h>
 #else
@@ -92,9 +104,6 @@ struct utsname
 };
 
 #endif
-
-#include <sys/types.h>
-#include <sys/stat.h>
 
 #ifdef HAVE_STDINT_H
 # include <stdint.h>
@@ -132,7 +141,7 @@ struct utsname
 # define WTERMSIG(s) ((s) & 0)
 #endif
 
-#include "bool.h"
+#include <bool.h>
 
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -165,6 +174,14 @@ struct utsname
 # endif
 #endif
 
+#ifndef PATH_MAX
+# ifdef _MAX_PATH
+#  define PATH_MAX _MAX_PATH
+# else
+#  define PATH_MAX 4096
+# endif
+#endif
+
 #include <signal.h>
 
 #ifdef __MINGW32__
@@ -178,6 +195,15 @@ struct utsname
 # define LOG_LOCAL7      (23<<3)
 # define LOG_USER        (1<<3)
 # define LOG_DAEMON      (3<<3)
+
+/* MinGW added this flag only in latest version. */
+# ifndef IPV6_V6ONLY
+#  define IPV6_V6ONLY 27
+# endif
+
+// Not available in MinGW headers unless you raise WINVER and _WIN32_WINNT, but
+// that is very badly supported in MinGW ATM.
+ULONGLONG WINAPI GetTickCount64(void);
 
 #else /* !__MINGW32__ */
 # include <syslog.h>
@@ -242,6 +268,30 @@ size_t strlcat(char *destination, const char *source, size_t size);
 
 #if !HAVE_DECL_STRSEP
 char *strsep(char **stringp, const char *delim);
+#endif
+
+#if !HAVE_DECL_SOCKETPAIR
+int socketpair(int domain, int type, int protocol, int sv[2]);
+#endif
+
+#if !HAVE_DECL_FSYNC
+int fsync(int fd);
+#endif
+
+#if !HAVE_DECL_GLOB
+#define GLOB_NOSPACE 1
+#define GLOB_ABORTED 2
+#define GLOB_NOMATCH 3
+typedef struct {
+    size_t   gl_pathc;    /* Count of paths matched so far  */
+    char   **gl_pathv;    /* List of matched pathnames.  */
+    size_t   gl_offs;
+} glob_t;
+int glob(const char *pattern,
+         int flags,
+         int (*errfunc) (const char *epath, int eerrno),
+         glob_t *pglob);
+void globfree(glob_t *pglob);
 #endif
 
 #ifdef __APPLE__
@@ -322,7 +372,7 @@ char *strsep(char **stringp, const char *delim);
 #endif
 
 #ifdef __linux__
-# ifdef __GLIBC__
+# if defined(__GLIBC__) || defined(__BIONIC__)
 #  include <net/route.h>
 #  include <netinet/in.h>
 #  include <netinet/ip.h>
@@ -345,27 +395,26 @@ typedef int clockid_t;
 typedef int socklen_t;
 #endif
 
-# define __USE_GNU 1
-
-# include <pthread.h>
 # ifndef _SC_THREAD_STACK_MIN
 #  define _SC_THREAD_STACK_MIN PTHREAD_STACK_MIN
-# endif
+#endif
 
-# ifndef PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
+#ifndef PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP
 #  define PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP PTHREAD_MUTEX_INITIALIZER
-# endif
+#endif
 
-# if !HAVE_DECL_PTHREAD_ATTR_SETSTACKSIZE
+#if !HAVE_DECL_PTHREAD_ATTR_SETSTACKSIZE
 int pthread_attr_setstacksize(pthread_attr_t *attr, size_t stacksize);
-# endif
+#endif
 
 #ifdef HAVE_SCHED_H
 # include <sched.h>
 #endif
 
-#ifdef WITH_SELINUX
-# include <selinux/selinux.h>
+#ifdef HAVE_ATTR_XATTR_H
+# include <attr/xattr.h>
+#elif defined(HAVE_SYS_XATTR_H)
+# include <sys/xattr.h>
 #endif
 
 #ifndef MIN
@@ -391,6 +440,9 @@ uid_t getuid(void);
 #if !HAVE_DECL_GETGID
 gid_t getgid(void);
 #endif
+#if !HAVE_DECL_FGETGRENT
+struct group *fgetgrent(FILE *stream);
+#endif
 #if !HAVE_DECL_DRAND48
 double drand48(void);
 #endif
@@ -400,14 +452,32 @@ void srand48(long seed);
 #if !HAVE_DECL_CLOCK_GETTIME
 int clock_gettime(clockid_t clock_id, struct timespec *tp);
 #endif
+
 #if !HAVE_DECL_REALPATH
-char *realpath(const char *path, char *resolved_path);
+    /**
+     * WARNING realpath() has varying behaviour among platforms.
+     *  - Do not use it to convert relative paths to absolute
+     *    (Solaris under certain conditions will return relative path).
+     *  - Do not use it to check existence of file
+     *    (on *BSD the last component of the path may not exist).
+     * Use it only to resolve all symlinks and canonicalise filename,
+     * i.e. remove double '/' and "/./" and "/../".
+     *
+     * @TODO what we need is a resolvepath(2) cross-platform implementation.
+     */
+#    if defined (__MINGW32__)
+#        define realpath(N,R) _fullpath((R), (N), PATH_MAX)
+#    endif
 #endif
+
 #if !HAVE_DECL_LSTAT
 int lstat(const char *file_name, struct stat *buf);
 #endif
 #if !HAVE_DECL_SLEEP
 unsigned int sleep(unsigned int seconds);
+#endif
+#if !HAVE_DECL_NANOSLEEP
+int nanosleep(const struct timespec *req, struct timespec *rem);
 #endif
 #if !HAVE_DECL_CHOWN
 int chown(const char *path, uid_t owner, gid_t group);
@@ -421,11 +491,21 @@ int getnetgrent(char **host, char **user, char **domain);
 #endif
 
 #if !HAVE_DECL_SETNETGRENT
-int setnetgrent(const char *netgroup);
+#if SETNETGRENT_RETURNS_INT
+int
+#else
+void
+#endif
+setnetgrent(const char *netgroup);
 #endif
 
 #if !HAVE_DECL_ENDNETGRENT
-int endnetgrent(void);
+#if ENDNETGRENT_RETURNS_INT
+int
+#else
+void
+#endif
+endnetgrent(void);
 #endif
 
 #if !HAVE_DECL_STRSTR
@@ -446,8 +526,15 @@ char *strsignal(int sig);
 #if !HAVE_DECL_STRDUP
 char *strdup(const char *str);
 #endif
+#if !HAVE_DECL_MEMRCHR
+void *memrchr(const void *s, int c, size_t n);
+#endif
 #if !HAVE_DECL_MEMDUP
 void *memdup(const void *mem, size_t size);
+#endif
+#if !HAVE_DECL_MEMMEM
+void *memmem(const void *haystack, size_t haystacklen,
+             const void *needle, size_t needlelen);
 #endif
 #if !HAVE_DECL_STRERROR
 char *strerror(int err);
@@ -464,13 +551,20 @@ int setegid(gid_t egid);
 #if !HAVE_DECL_SETLINEBUF
 void setlinebuf(FILE *stream);
 #endif
+
 #if HAVE_STDARG_H
 # include <stdarg.h>
 # if !HAVE_VSNPRINTF
 int rpl_vsnprintf(char *, size_t, const char *, va_list);
+/* If [v]snprintf() does not exist or is not C99 compatible, then we assume
+ * that [v]printf() and [v]fprintf() need to be provided as well. */
+int rpl_vprintf(const char *format, va_list ap);
+int rpl_vfprintf(FILE *stream, const char *format, va_list ap);
 # endif
 # if !HAVE_SNPRINTF
 int rpl_snprintf(char *, size_t, const char *, ...);
+int rpl_printf(const char *format, ...);
+int rpl_fprintf(FILE *stream, const char *format, ...);
 # endif
 # if !HAVE_VASPRINTF
 int rpl_vasprintf(char **, const char *, va_list);
@@ -481,6 +575,9 @@ int rpl_asprintf(char **, const char *, ...);
 #endif /* HAVE_STDARG_H */
 #if !defined(isfinite)
 # define isfinite(x) finite(x)
+#endif
+#if !HAVE_DECL_GETLINE
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #endif
 #if !HAVE_DECL_GMTIME_R
 struct tm *gmtime_r(const time_t *timep, struct tm *result);
@@ -551,6 +648,22 @@ char *rpl_ctime(const time_t *t);
 
 #ifndef NGROUPS
 # define NGROUPS 20
+#endif
+
+#if !HAVE_DECL_OPENAT
+int openat(int dirfd, const char *pathname, int flags, ...);
+int fstatat(int dirfd, const char *pathname, struct stat *buf, int flags);
+int fchownat(int dirfd, const char *pathname, uid_t owner, gid_t group, int flags);
+#ifndef AT_SYMLINK_NOFOLLOW
+#define AT_SYMLINK_NOFOLLOW 0x1000
+#endif
+#ifndef AT_FDCWD
+#define AT_FDCWD (-2)
+#endif
+#endif
+
+#if !HAVE_DECL_LOG2
+double log2(double x);
 #endif
 
 /*******************************************************************/
@@ -717,12 +830,16 @@ struct timespec
 # define S_IRUSR 00400
 # define S_IWUSR 00200
 # define S_IXUSR 00100
+#endif
 
+#ifndef S_IRGRP
 # define S_IRWXG 00070
 # define S_IRGRP 00040
 # define S_IWGRP 00020
 # define S_IXGRP 00010
+#endif
 
+#ifndef S_IROTH
 # define S_IRWXO 00007
 # define S_IROTH 00004
 # define S_IWOTH 00002
@@ -778,11 +895,18 @@ struct timespec
 # define O_BINARY 0
 #endif
 
+#if !defined O_TEXT
+# define O_TEXT 0
+#endif
+
 #if defined(__MINGW32__)
 /* _mkdir(3) */
-#include <direct.h>
+# include <direct.h>
 #endif
 
-#include "config.post.h"
+/* Must be always the last one! */
+#include <deprecated.h>
+#include <config.post.h>
 
-#endif
+
+#endif  /* CFENGINE_PLATFORM_H */

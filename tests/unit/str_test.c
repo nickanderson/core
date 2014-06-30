@@ -1,12 +1,66 @@
-#include "cf3.defs.h"
-#include "string_lib.h"
+#include <cf3.defs.h>
+#include <string_lib.h>
 
-#include "conversion.h"
+#include <conversion.h>
 
-#include "test.h"
+#include <test.h>
 
 static const char *lo_alphabet = "abcdefghijklmnopqrstuvwxyz";
 static const char *hi_alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+static void test_get_token(void)
+{
+    {
+        const char *str = "  abc def ,efg ";
+        size_t len = strlen(str);
+
+        assert_int_equal(3, StringCountTokens(str, len, ", "));
+
+        {
+            StringRef ref = StringGetToken(str, len, 0, ", ");
+            assert_int_equal(3, ref.len);
+            assert_memory_equal("abc", ref.data, 3);
+        }
+
+        {
+            StringRef ref = StringGetToken(str, len, 1, ", ");
+            assert_int_equal(3, ref.len);
+            assert_memory_equal("def", ref.data, 3);
+        }
+
+        {
+            StringRef ref = StringGetToken(str, len, 2, ", ");
+            assert_int_equal(3, ref.len);
+            assert_memory_equal("efg", ref.data, 3);
+        }
+    }
+
+    {
+        const char *str = "abc";
+        size_t len = strlen(str);
+
+        assert_int_equal(1, StringCountTokens(str, len, ", "));
+
+        {
+            StringRef ref = StringGetToken(str, len, 0, ", ");
+            assert_int_equal(3, ref.len);
+            assert_memory_equal("abc", ref.data, 3);
+        }
+    }
+
+    {
+        const char *str = "abc ";
+        size_t len = strlen(str);
+
+        assert_int_equal(1, StringCountTokens(str, len, ", "));
+
+        {
+            StringRef ref = StringGetToken(str, len, 0, ", ");
+            assert_int_equal(3, ref.len);
+            assert_memory_equal("abc", ref.data, 3);
+        }
+    }
+}
 
 static void test_mix_case_tolower(void)
 {
@@ -29,7 +83,7 @@ static void test_weird_chars_tolower(void)
     static const char *weirdstuff = "1345\0xff%$#@!";
 
     char weirdstuff_copy_lowercased[CF_MAXVARSIZE];
-    strncpy(weirdstuff_copy_lowercased, weirdstuff, CF_MAXVARSIZE);
+    strlcpy(weirdstuff_copy_lowercased, weirdstuff, CF_MAXVARSIZE);
     ToLowerStrInplace(weirdstuff_copy_lowercased);
 
     assert_string_equal(weirdstuff_copy_lowercased, weirdstuff);
@@ -38,7 +92,7 @@ static void test_weird_chars_tolower(void)
 static void test_alphabet_tolower(void)
 {
     char lo_alphabet_lowercased[CF_MAXVARSIZE];
-    strncpy(lo_alphabet_lowercased, lo_alphabet, CF_MAXVARSIZE);
+    strlcpy(lo_alphabet_lowercased, lo_alphabet, CF_MAXVARSIZE);
     ToLowerStrInplace(lo_alphabet_lowercased);
 
     assert_string_equal(lo_alphabet_lowercased, lo_alphabet);
@@ -47,7 +101,7 @@ static void test_alphabet_tolower(void)
 static void test_hi_alphabet_tolower(void)
 {
     char hi_alphabet_lowercased[CF_MAXVARSIZE];
-    strncpy(hi_alphabet_lowercased, hi_alphabet, CF_MAXVARSIZE);
+    strlcpy(hi_alphabet_lowercased, hi_alphabet, CF_MAXVARSIZE);
     ToLowerStrInplace(hi_alphabet_lowercased);
 
     assert_string_equal(hi_alphabet_lowercased, lo_alphabet);
@@ -84,7 +138,7 @@ static void test_weird_chars_toupper(void)
     static const char *weirdstuff = "1345\0xff%$#@!";
 
     char weirdstuff_copy_uppercased[CF_MAXVARSIZE];
-    strncpy(weirdstuff_copy_uppercased, weirdstuff, CF_MAXVARSIZE);
+    strlcpy(weirdstuff_copy_uppercased, weirdstuff, CF_MAXVARSIZE);
     ToUpperStrInplace(weirdstuff_copy_uppercased);
 
     assert_string_equal(weirdstuff_copy_uppercased, weirdstuff);
@@ -93,7 +147,7 @@ static void test_weird_chars_toupper(void)
 static void test_alphabet_toupper(void)
 {
     char lo_alphabet_uppercased[CF_MAXVARSIZE];
-    strncpy(lo_alphabet_uppercased, lo_alphabet, CF_MAXVARSIZE);
+    strlcpy(lo_alphabet_uppercased, lo_alphabet, CF_MAXVARSIZE);
     ToUpperStrInplace(lo_alphabet_uppercased);
 
     assert_string_equal(lo_alphabet_uppercased, hi_alphabet);
@@ -102,7 +156,7 @@ static void test_alphabet_toupper(void)
 static void test_hi_alphabet_toupper(void)
 {
     char hi_alphabet_uppercased[CF_MAXVARSIZE];
-    strncpy(hi_alphabet_uppercased, hi_alphabet, CF_MAXVARSIZE);
+    strlcpy(hi_alphabet_uppercased, hi_alphabet, CF_MAXVARSIZE);
     ToUpperStrInplace(hi_alphabet_uppercased);
 
     assert_string_equal(hi_alphabet_uppercased, hi_alphabet);
@@ -254,6 +308,11 @@ static void test_string_to_double(void)
     assert_true(1234.1234 == StringToDouble("1234.1234"));
 }
 
+static void test_string_from_double(void)
+{
+    assert_string_equal("1234.12", StringFromDouble(1234.1234));
+}
+
 static void test_safe_compare(void)
 {
     assert_true(StringSafeCompare(NULL, NULL) == 0);
@@ -274,10 +333,10 @@ static void test_safe_equal(void)
 
 static void test_match(void)
 {
-    assert_true(StringMatch("^a.*$", "abc"));
-    assert_true(StringMatch("a", "a"));
-    assert_true(StringMatch("a", "ab"));
-    assert_false(StringMatch("^a.*$", "bac"));
+    assert_true(StringMatch("^a.*$", "abc", NULL, NULL));
+    assert_true(StringMatch("a", "a", NULL, NULL));
+    assert_true(StringMatch("a", "ab", NULL, NULL));
+    assert_false(StringMatch("^a.*$", "bac", NULL, NULL));
 }
 
 
@@ -438,11 +497,43 @@ static void test_stringformat(void)
     free(s);
 }
 
+static void test_stringscanfcapped(void)
+{
+    char buf[20];
+    char sp[30];
+
+    strcpy(sp,"");
+    StringNotMatchingSetCapped(sp,20,"\n",buf);
+    assert_string_equal(buf, "");
+
+    strcpy(sp,"\n");
+    StringNotMatchingSetCapped(sp,20,"\n",buf);
+    assert_string_equal(buf, "");
+
+    strcpy(sp,"\n2345678901234567890abcdefghi");
+    StringNotMatchingSetCapped(sp,20,"\n",buf);
+    assert_string_equal(buf, "");
+
+    strcpy(sp,"12345678901234567890abcdefghi");
+    StringNotMatchingSetCapped(sp,20,"\n",buf);
+    assert_string_equal(buf, "1234567890123456789");
+
+    strcpy(sp,"12345678901234567890abcde\nghi");
+    StringNotMatchingSetCapped(sp,20,"\n",buf);
+    assert_string_equal(buf, "1234567890123456789");
+
+    strcpy(sp,"123456789012345\n7890abcdefghi");
+    StringNotMatchingSetCapped(sp,20,"\n",buf);
+    assert_string_equal(buf, "123456789012345");
+}
+
 int main()
 {
     PRINT_TEST_BANNER();
     const UnitTest tests[] =
     {
+        unit_test(test_get_token),
+
         unit_test(test_mix_case_tolower),
         unit_test(test_empty_tolower),
         unit_test(test_weird_chars_tolower),
@@ -476,6 +567,7 @@ int main()
         unit_test(test_string_to_long),
         unit_test(test_string_from_long),
         unit_test(test_string_to_double),
+        unit_test(test_string_from_double),
 
         unit_test(test_safe_compare),
         unit_test(test_safe_equal),
@@ -498,6 +590,8 @@ int main()
 
         unit_test(test_stringformat),
         unit_test(test_stringvformat),
+
+        unit_test(test_stringscanfcapped),
     };
 
     return run_tests(tests);
@@ -517,6 +611,11 @@ void FatalError(char *s, ...)
 {
     fail();
     exit(42);
+}
+
+void Log(LogLevel level, const char *fmt, ...)
+{
+    fail();
 }
 
 /* LCOV_EXCL_STOP */

@@ -17,17 +17,15 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
 
-#include "sequence.h"
 
-#include "alloc.h"
+#include <sequence.h>
+#include <alloc.h>
 
-#include <stdlib.h>
-#include <assert.h>
 
 static const size_t EXPAND_FACTOR = 2;
 
@@ -88,6 +86,16 @@ static void ExpandIfNeccessary(Seq *seq)
     }
 }
 
+void SeqSet(Seq *seq, size_t index, void *item)
+{
+    assert(index < SeqLength(seq));
+    if (seq->ItemDestroy)
+    {
+        seq->ItemDestroy(seq->data[index]);
+    }
+    seq->data[index] = item;
+}
+
 void SeqAppend(Seq *seq, void *item)
 {
     ExpandIfNeccessary(seq);
@@ -141,6 +149,19 @@ void *SeqLookup(Seq *seq, const void *key, SeqItemComparator Compare)
     return NULL;
 }
 
+void *SeqBinaryLookup(Seq *seq, const void *key, SeqItemComparator Compare)
+{
+    ssize_t index = SeqBinaryIndexOf(seq, key, Compare);
+    if (index == -1)
+    {
+        return NULL;
+    }
+    else
+    {
+        return seq->data[index];
+    }
+}
+
 ssize_t SeqIndexOf(Seq *seq, const void *key, SeqItemComparator Compare)
 {
     for (size_t i = 0; i < seq->length; i++)
@@ -151,6 +172,39 @@ ssize_t SeqIndexOf(Seq *seq, const void *key, SeqItemComparator Compare)
         }
     }
 
+    return -1;
+}
+
+ssize_t SeqBinaryIndexOf(Seq *seq, const void *key, SeqItemComparator Compare)
+{
+    if (seq->length == 0)
+    {
+        return -1;
+    }
+
+    size_t low = 0;
+    size_t high = seq->length;
+
+    while (low < high)
+    {
+        // Invariant: low <= middle < high
+        size_t middle = low + ((high - low) >> 1); // ">> 1" is division by 2.
+        int result = Compare(key, seq->data[middle], NULL);
+        if (result == 0)
+        {
+            return middle;
+        }
+        if (result > 0)
+        {
+            low = middle + 1;
+        }
+        else
+        {
+            high = middle;
+        }
+    }
+
+    // Not found.
     return -1;
 }
 
@@ -203,6 +257,19 @@ void SeqSort(Seq *seq, SeqItemComparator Compare, void *user_data)
     QuickSortRecursive(seq->data, seq->length, Compare, user_data, 0);
 }
 
+Seq *SeqSoftSort(const Seq *seq, SeqItemComparator compare, void *user_data)
+{
+    size_t length = SeqLength(seq);
+    if (length == 0)
+    {
+        return SeqNew(0, NULL);
+    }
+
+    Seq *sorted_seq = SeqGetRange(seq, 0, length - 1);
+    SeqSort(sorted_seq, compare, user_data);
+    return sorted_seq;
+}
+
 void SeqSoftRemoveRange(Seq *seq, size_t start, size_t end)
 {
     assert(seq);
@@ -218,6 +285,14 @@ void SeqSoftRemoveRange(Seq *seq, size_t start, size_t end)
     }
 
     seq->length -= end - start + 1;
+}
+
+void SeqClear(Seq *seq)
+{
+    if (SeqLength(seq) > 0)
+    {
+        SeqRemoveRange(seq, 0, SeqLength(seq) - 1);
+    }
 }
 
 void SeqSoftRemove(Seq *seq, size_t index)
@@ -255,4 +330,23 @@ void SeqShuffle(Seq *seq, unsigned int seed)
 
     /* Restore previous random number state */
     srand(rand_state);
+}
+
+Seq *SeqGetRange(const Seq *seq, size_t start, size_t end)
+{
+    assert (seq);
+
+    if ((start > end) || (seq->length < start) || (seq->length < end))
+    {
+        return NULL;
+    }
+
+    Seq *sub = SeqNew(end - start + 1, seq->ItemDestroy);
+
+    for (size_t i = start; i <= end; i++)
+    {
+        SeqAppend(sub, SeqAt(seq, i));
+    }
+
+    return sub;
 }
