@@ -17,36 +17,38 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
 
-#include "generic_agent.h"
+#include <generic_agent.h>
 
-#include "dbm_api.h"
-#include "lastseen.h"
-#include "dir.h"
-#include "scope.h"
-#include "files_copy.h"
-#include "files_interfaces.h"
-#include "files_hashes.h"
-#include "keyring.h"
-#include "env_context.h"
-#include "crypto.h"
-#include "sysinfo.h"
-#include "man.h"
+#include <dbm_api.h>
+#include <lastseen.h>
+#include <dir.h>
+#include <scope.h>
+#include <files_copy.h>
+#include <files_interfaces.h>
+#include <files_hashes.h>
+#include <keyring.h>
+#include <eval_context.h>
+#include <crypto.h>
+#include <known_dirs.h>
+#include <man.h>
+#include <signals.h>
 
-#include "cf-key-functions.h"
+#include <cf-key-functions.h>
 
-int SHOWHOSTS = false;
-bool REMOVEKEYS = false;
-bool LICENSE_INSTALL = false;
-char LICENSE_SOURCE[MAX_FILENAME];
-const char *remove_keys_host;
-static char *print_digest_arg = NULL;
-static char *trust_key_arg = NULL;
-static char *KEY_PATH;
+int SHOWHOSTS = false; /* GLOBAL_A */
+bool FORCEREMOVAL = false; /* GLOBAL_A */
+bool REMOVEKEYS = false; /* GLOBAL_A */
+bool LICENSE_INSTALL = false; /* GLOBAL_A */
+char LICENSE_SOURCE[MAX_FILENAME] = ""; /* GLOBAL_A */
+const char *remove_keys_host = NULL; /* GLOBAL_A */
+static char *print_digest_arg = NULL; /* GLOBAL_A */
+static char *trust_key_arg = NULL; /* GLOBAL_A */
+static char *KEY_PATH = NULL; /* GLOBAL_A */
 
 static GenericAgentConfig *CheckOpts(int argc, char **argv);
 
@@ -54,11 +56,13 @@ static GenericAgentConfig *CheckOpts(int argc, char **argv);
 /* Command line options                                            */
 /*******************************************************************/
 
-static const char *CF_KEY_SHORT_DESCRIPTION = "make private/public key-pairs for CFEngine authentication";
+static const char *const CF_KEY_SHORT_DESCRIPTION =
+    "make private/public key-pairs for CFEngine authentication";
 
-static const char *CF_KEY_MANPAGE_LONG_DESCRIPTION = "The CFEngine key generator makes key pairs for remote authentication.\n";
+static const char *const CF_KEY_MANPAGE_LONG_DESCRIPTION =
+    "The CFEngine key generator makes key pairs for remote authentication.\n";
 
-static const struct option OPTIONS[17] =
+static const struct option OPTIONS[] =
 {
     {"help", no_argument, 0, 'h'},
     {"debug", no_argument, 0, 'd'},
@@ -67,13 +71,15 @@ static const struct option OPTIONS[17] =
     {"output-file", required_argument, 0, 'f'},
     {"show-hosts", no_argument, 0, 's'},
     {"remove-keys", required_argument, 0, 'r'},
+    {"force-removal", no_argument, 0, 'x'},
     {"install-license", required_argument, 0, 'l'},
     {"print-digest", required_argument, 0, 'p'},
     {"trust-key", required_argument, 0, 't'},
+    {"color", optional_argument, 0, 'C'},
     {NULL, 0, 0, '\0'}
 };
 
-static const char *HINTS[17] =
+static const char *const HINTS[] =
 {
     "Print the help message",
     "Enable debugging output",
@@ -82,25 +88,47 @@ static const char *HINTS[17] =
     "Specify an alternative output file than the default (localhost)",
     "Show lastseen hostnames and IP addresses",
     "Remove keys for specified hostname/IP",
-    "Install license without boostrapping (CFEngine Enterprise only)",
+    "Force removal of keys (USE AT YOUR OWN RISK)",
+    "Install license file on Enterprise server (CFEngine Enterprise Only)",
     "Print digest of the specified public key",
     "Make cf-serverd/cf-agent trust the specified public key",
+    "Enable colorized output. Possible values: 'always', 'auto', 'never'. If option is used, the default value is 'auto'",
     NULL
 };
 
 /*****************************************************************************/
 
+typedef void (*CfKeySigHandler)(int signum);
+bool cf_key_interrupted = false;
+
+static void handleShowKeysSignal(int signum)
+{
+    cf_key_interrupted = true;
+
+    signal(signum, handleShowKeysSignal);
+}
+
+static void ThisAgentInit(CfKeySigHandler sighandler)
+{
+    signal(SIGINT, sighandler);
+    signal(SIGTERM, sighandler);
+    signal(SIGHUP, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGUSR1, HandleSignalsForAgent);
+    signal(SIGUSR2, HandleSignalsForAgent);
+}
+
 int main(int argc, char *argv[])
 {
-    EvalContext *ctx = EvalContextNew();
-
     GenericAgentConfig *config = CheckOpts(argc, argv);
+    EvalContext *ctx = EvalContextNew();
     GenericAgentConfigApply(ctx, config);
 
     GenericAgentDiscoverContext(ctx, config);
 
     if (SHOWHOSTS)
     {
+        ThisAgentInit(handleShowKeysSignal);
         ShowLastSeenHosts();
         return 0;
     }
@@ -110,9 +138,34 @@ int main(int argc, char *argv[])
         return PrintDigest(print_digest_arg);
     }
 
+    ThisAgentInit(HandleSignalsForAgent);
     if (REMOVEKEYS)
     {
-        return RemoveKeys(remove_keys_host);
+        int status;
+        if (FORCEREMOVAL)
+        {
+            if (!strncmp(remove_keys_host, "SHA=", 3) ||
+                !strncmp(remove_keys_host, "MD5=", 3))
+            {
+                status = ForceKeyRemoval(remove_keys_host);
+            }
+            else
+            {
+                status = ForceIpAddressRemoval(remove_keys_host);
+            }
+        }
+        else
+        {
+            status = RemoveKeys(remove_keys_host, true);
+            if (status == 0 || status == 1)
+            {
+                Log (LOG_LEVEL_VERBOSE,
+                    "Forced removal of entry '%s' was successful",
+                    remove_keys_host);
+                return 0;
+            }
+        }
+        return status;
     }
 
     if(LICENSE_INSTALL)
@@ -135,8 +188,8 @@ int main(int argc, char *argv[])
     }
     else
     {
-        public_key_file = xstrdup(PublicKeyFile(GetWorkDir()));
-        private_key_file = xstrdup(PrivateKeyFile(GetWorkDir()));
+        public_key_file = PublicKeyFile(GetWorkDir());
+        private_key_file = PrivateKeyFile(GetWorkDir());
     }
 
     KeepKeyPromises(public_key_file, private_key_file);
@@ -144,8 +197,7 @@ int main(int argc, char *argv[])
     free(public_key_file);
     free(private_key_file);
 
-    GenericAgentConfigDestroy(config);
-    EvalContextDestroy(ctx);
+    GenericAgentFinalize(ctx, config);
     return 0;
 }
 
@@ -160,7 +212,7 @@ static GenericAgentConfig *CheckOpts(int argc, char **argv)
     int c;
     GenericAgentConfig *config = GenericAgentConfigNewDefault(AGENT_TYPE_KEYGEN);
 
-    while ((c = getopt_long(argc, argv, "dvf:VMp:sr:t:hl:", OPTIONS, &optindex)) != EOF)
+    while ((c = getopt_long(argc, argv, "dvf:VMp:sr:xt:hl:C::", OPTIONS, &optindex)) != EOF)
     {
         switch ((char) c)
         {
@@ -173,8 +225,12 @@ static GenericAgentConfig *CheckOpts(int argc, char **argv)
             break;
 
         case 'V':
-            PrintVersion();
-            exit(0);
+            {
+                Writer *w = FileWriter(stdout);
+                GenericAgentWriteVersion(w);
+                FileWriterDetach(w);
+            }
+            exit(EXIT_SUCCESS);
 
         case 'v':
             LogSetGlobalLevel(LOG_LEVEL_VERBOSE);
@@ -186,6 +242,10 @@ static GenericAgentConfig *CheckOpts(int argc, char **argv)
 
         case 's':
             SHOWHOSTS = true;
+            break;
+
+        case 'x':
+            FORCEREMOVAL = true;
             break;
 
         case 'r':
@@ -203,8 +263,12 @@ static GenericAgentConfig *CheckOpts(int argc, char **argv)
             break;
 
         case 'h':
-            PrintHelp("cf-key", OPTIONS, HINTS, false);
-            exit(0);
+            {
+                Writer *w = FileWriter(stdout);
+                GenericAgentWriteHelp(w, "cf-key", OPTIONS, HINTS, false);
+                FileWriterDetach(w);
+            }
+            exit(EXIT_SUCCESS);
 
         case 'M':
             {
@@ -218,9 +282,20 @@ static GenericAgentConfig *CheckOpts(int argc, char **argv)
                 exit(EXIT_SUCCESS);
             }
 
+        case 'C':
+            if (!GenericAgentConfigParseColor(config, optarg))
+            {
+                exit(EXIT_FAILURE);
+            }
+            break;
+
         default:
-            PrintHelp("cf-key", OPTIONS, HINTS, false);
-            exit(1);
+            {
+                Writer *w = FileWriter(stdout);
+                GenericAgentWriteHelp(w, "cf-key", OPTIONS, HINTS, false);
+                FileWriterDetach(w);
+            }
+            exit(EXIT_FAILURE);
 
         }
     }

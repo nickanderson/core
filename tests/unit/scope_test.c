@@ -1,5 +1,8 @@
-#include "test.h"
-#include "scope.h"
+#include <test.h>
+
+#include <scope.h>
+#include <eval_context.h>
+#include <rlist.h>
 
 static void test_name_join(void)
 {

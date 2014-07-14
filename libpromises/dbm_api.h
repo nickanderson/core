@@ -17,7 +17,7 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
@@ -25,13 +25,16 @@
 #ifndef CFENGINE_DBM_API_H
 #define CFENGINE_DBM_API_H
 
+#include <map.h>
+
 typedef enum
 {
     dbid_classes,
     dbid_variables,
     dbid_performance,
-    dbid_checksums,
-    dbid_filestats,
+    dbid_checksums, // Deprecated
+    dbid_filestats, // Deprecated
+    dbid_changes,
     dbid_observations,
     dbid_state,
     dbid_lastseen,
@@ -41,7 +44,6 @@ typedef enum
     dbid_measure,
     dbid_static,
     dbid_scalars,
-    dbid_promise_compliance,
     dbid_windows_registry,
     dbid_cache,
     dbid_license,
@@ -86,4 +88,6 @@ bool DeleteDBCursor(CF_DBC *dbcp);
 
 char *DBIdToPath(const char *workdir, dbid id);
 
+int UpdateLastSeenMaxReaders(int maxreaders);
+StringMap *LoadDatabaseToStringMap(dbid database_id);
 #endif  /* NOT CFENGINE_DBM_API_H */

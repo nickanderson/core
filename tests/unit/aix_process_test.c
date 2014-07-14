@@ -1,21 +1,21 @@
-#include "platform.h"
+#include <test.h>
 
-#include "compiler.h"
-#include "test.h"
-#include "process_lib.h"
-#include "process_unix_priv.h"
+#include <compiler.h>
+#include <process_lib.h>
+#include <process_unix_priv.h>
 
 #include <procinfo.h>
 
 /*
  * AIX 5.3 is missing this declaration
  */
+#ifndef GETPROCS64
 int getprocs64(struct procentry64 *, int, struct fdsinfo64 *, int, pid_t *, int);
 
 int getprocs64(struct procentry64* pe, int process_size, struct fdsinfo64 *fi, int files_size, pid_t* pid, int count)
 {
-    assert(count == 1);
-    assert(fi == NULL);
+    assert_int_equal(count, 1);
+    assert_true(fi == NULL);
 
     switch (*pid)
     {
@@ -56,7 +56,7 @@ int getprocs64(struct procentry64* pe, int process_size, struct fdsinfo64 *fi, i
         return 0;
     }
 }
-
+#endif
 static void test_get_start_time_process1(void)
 {
     time_t t = GetProcessStartTime(1);

@@ -1,9 +1,8 @@
-#include "platform.h"
+#include <test.h>
 
-#include "compiler.h"
-#include "test.h"
-#include "process_lib.h"
-#include "process_unix_priv.h"
+#include <compiler.h>
+#include <process_lib.h>
+#include <process_unix_priv.h>
 
 /*
  * procfs.h is not 64-bit off_t clean, but the only affected structure is

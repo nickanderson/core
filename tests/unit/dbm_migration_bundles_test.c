@@ -1,23 +1,23 @@
-#include "cf3.defs.h"
-#include "dbm_api.h"
-#include "test.h"
-#include "lastseen.h"
+#include <test.h>
 
-#include <setjmp.h>
-#include <cmockery.h>
+#include <cf3.defs.h>
+#include <dbm_api.h>
+#include <lastseen.h>
+#include <misc_lib.h>                                          /* xsnprintf */
+
 
 char CFWORKDIR[CF_BUFSIZE];
 
 static void tests_setup(void)
 {
-    snprintf(CFWORKDIR, CF_BUFSIZE, "/tmp/persistent_lock_test.XXXXXX");
+    xsnprintf(CFWORKDIR, CF_BUFSIZE, "/tmp/persistent_lock_test.XXXXXX");
     mkdtemp(CFWORKDIR);
 }
 
 static void tests_teardown(void)
 {
     char cmd[CF_BUFSIZE];
-    snprintf(cmd, CF_BUFSIZE, "rm -rf '%s'", CFWORKDIR);
+    xsnprintf(cmd, CF_BUFSIZE, "rm -rf '%s'", CFWORKDIR);
     system(cmd);
 }
 
@@ -32,7 +32,7 @@ static const Event dummy_event = {
 static DBHandle *setup(bool clean)
 {
     char cmd[CF_BUFSIZE];
-    snprintf(cmd, CF_BUFSIZE, "rm -rf '%s'/*", CFWORKDIR);
+    xsnprintf(cmd, CF_BUFSIZE, "rm -rf '%s'/*", CFWORKDIR);
     system(cmd);
 
     DBHandle *db;
@@ -148,6 +148,9 @@ void test_migrate_unqualified_names(void)
 
 int main()
 {
+#ifdef LMDB
+    return 0;
+#else
     tests_setup();
 
     const UnitTest tests[] =
@@ -163,35 +166,13 @@ int main()
     tests_teardown();
 
     return ret;
+#endif
 }
 
 /* STUBS */
-const char *DAY_TEXT[] = {};
-const char *MONTH_TEXT[] = {};
 
-void __ProgrammingError(const char *file, int lineno, const char *format, ...)
+void FatalError(ARG_UNUSED char *s, ...)
 {
     fail();
     exit(42);
-}
-
-void FatalError(char *s, ...)
-{
-    fail();
-    exit(42);
-}
-
-void Log(LogLevel level, const char *fmt, ...)
-{
-    fprintf(stderr, "CFOUT<%d>: ", level);
-    va_list ap;
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-    fprintf(stderr, "\n");
-}
-
-const char *GetErrorStr(void)
-{
-    return strerror(errno);
 }

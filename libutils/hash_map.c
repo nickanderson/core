@@ -17,14 +17,14 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
 
-#include "platform.h"
-#include "hash_map_priv.h"
-#include "alloc.h"
+#include <platform.h>
+#include <hash_map_priv.h>
+#include <alloc.h>
 
 /* FIXME: make configurable and move to map.c */
 #define HASHMAP_BUCKETS 8192
@@ -42,9 +42,9 @@ HashMap *HashMapNew(MapHashFn hash_fn, MapKeyEqualFn equal_fn,
     return map;
 }
 
-static unsigned HashMapGetBucket(const HashMap *map, const void *key)
+static unsigned int HashMapGetBucket(const HashMap *map, const void *key)
 {
-    return map->hash_fn(key, HASHMAP_BUCKETS);
+    return map->hash_fn(key, 0, HASHMAP_BUCKETS);
 }
 
 bool HashMapInsert(HashMap *map, void *key, void *value)
@@ -127,6 +127,18 @@ static void FreeBucketListItem(HashMap *map, BucketListItem *item)
     free(item);
 }
 
+/* Do not destroy value item */
+static void FreeBucketListItemSoft(HashMap *map, BucketListItem *item)
+{
+    if (item->next)
+    {
+        FreeBucketListItemSoft(map, item->next);
+    }
+
+    map->destroy_key_fn(item->value.key);
+    free(item);
+}
+
 void HashMapClear(HashMap *map)
 {
     for (int i = 0; i < HASHMAP_BUCKETS; ++i)
@@ -136,6 +148,24 @@ void HashMapClear(HashMap *map)
             FreeBucketListItem(map, map->buckets[i]);
         }
         map->buckets[i] = NULL;
+    }
+}
+
+void HashMapSoftDestroy(HashMap *map)
+{
+    if (map)
+    {
+        for (int i = 0; i < HASHMAP_BUCKETS; ++i)
+        {
+            if (map->buckets[i])
+            {
+                FreeBucketListItemSoft(map, map->buckets[i]);
+            }
+            map->buckets[i] = NULL;
+        }
+
+        free(map->buckets);
+        free(map);
     }
 }
 
@@ -149,6 +179,51 @@ void HashMapDestroy(HashMap *map)
     }
 }
 
+void HashMapPrintStats(const HashMap *hmap, FILE *f)
+{
+    size_t bucket_lengths[HASHMAP_BUCKETS] = { 0 };
+    size_t num_el = 0;
+    size_t num_buckets = 0;
+
+    for (int i = 0; i < HASHMAP_BUCKETS; i++)
+    {
+        BucketListItem *b = hmap->buckets[i];
+        if (b != NULL)
+        {
+            num_buckets++;
+        }
+        while (b != NULL)
+        {
+            num_el++;
+            bucket_lengths[i]++;
+            b = b->next;
+        }
+
+    }
+
+    fprintf(f, "\tTotal number of buckets:     %5d\n", HASHMAP_BUCKETS);
+    fprintf(f, "\tNumber of non-empty buckets: %5zu\n", num_buckets);
+    fprintf(f, "\tTotal number of elements:    %5zu\n", num_el);
+    fprintf(f, "\tAverage elements per non-empty bucket (load factor): %5.2f\n",
+            (float) num_el / num_buckets);
+
+    fprintf(f, "\tThe 10 longest buckets are: \n");
+    for (int j = 0; j < 10; j++)
+    {
+        /* Find the maximum 10 times, zeroing it after printing it. */
+        int longest_bucket_id = 0;
+        for (int i = 0; i < HASHMAP_BUCKETS; i++)
+        {
+            if (bucket_lengths[i] > bucket_lengths[longest_bucket_id])
+            {
+                longest_bucket_id = i;
+            }
+        }
+        fprintf(f, "\t\tbucket %5d with %zu elements\n",
+                longest_bucket_id, bucket_lengths[longest_bucket_id]);
+        bucket_lengths[longest_bucket_id] = 0;
+    }
+}
 /******************************************************************************/
 
 HashMapIterator HashMapIteratorInit(HashMap *map)

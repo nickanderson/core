@@ -1,0 +1,24 @@
+#
+body common control
+{
+      inputs => { "../../default.cf.sub", "./run_with_server.cf.sub" };
+      bundlesequence => { default("$(this.promise_filename)") };
+      version => "1.0";
+}
+
+bundle agent test
+{
+  meta:
+      "test_suppress_fail" string => "windows|sunos_5_11|sunos_5_10|sunos_5_9",
+        meta => { "redmine4822" };
+
+  methods:
+      "any" usebundle => dcs_fini("$(G.testdir)/dest_file_classic");
+      "any" usebundle => dcs_fini("$(G.testdir)/dest_file_latest");
+      "any" usebundle => file_make("$(G.testdir)/source_file",
+                                      "This is the source file to copy $(sys.date) - always fresh");
+      "any" usebundle => generate_key;
+      "any" usebundle => start_server("localhost_closed_hostname");
+      "any" usebundle => run_test("$(this.promise_filename).sub");
+      "any" usebundle => stop_server("localhost_closed_hostname");
+}

@@ -17,49 +17,24 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
 
-#include "files_hashes.h"
+#include <files_hashes.h>
 
-#include "dbm_api.h"
-#include "files_interfaces.h"
-#include "client_code.h"
-#include "files_lib.h"
-#include "rlist.h"
-#include "policy.h"
+#include <dbm_api.h>
+#include <files_interfaces.h>
+#include <client_code.h>
+#include <files_lib.h>
+#include <rlist.h>
+#include <policy.h>
+#include <string_lib.h>                                 /* StringBytesToHex */
+#include <misc_lib.h>                                   /* UnexpectedError */
 
-static const char *CF_DIGEST_TYPES[10][2] =
-{
-    {"md5", "m"},
-    {"sha224", "c"},
-    {"sha256", "C"},
-    {"sha384", "h"},
-    {"sha512", "H"},
-    {"sha1", "S"},
-    {"sha", "s"},               /* Should come last, since substring */
-    {"best", "b"},
-    {"crypt", "o"},
-    {NULL, NULL}
-};
 
-static const int CF_DIGEST_SIZES[10] =
-{
-    CF_MD5_LEN,
-    CF_SHA224_LEN,
-    CF_SHA256_LEN,
-    CF_SHA384_LEN,
-    CF_SHA512_LEN,
-    CF_SHA1_LEN,
-    CF_SHA_LEN,
-    CF_BEST_LEN,
-    CF_CRYPT_LEN,
-    0
-};
-
-void HashFile(char *filename, unsigned char digest[EVP_MAX_MD_SIZE + 1], HashMethod type)
+void HashFile(const char *filename, unsigned char digest[EVP_MAX_MD_SIZE + 1], HashMethod type)
 {
     FILE *file;
     EVP_MD_CTX context;
@@ -67,13 +42,13 @@ void HashFile(char *filename, unsigned char digest[EVP_MAX_MD_SIZE + 1], HashMet
     unsigned char buffer[1024];
     const EVP_MD *md = NULL;
 
-    if ((file = fopen(filename, "rb")) == NULL)
+    if ((file = safe_fopen(filename, "rb")) == NULL)
     {
         Log(LOG_LEVEL_INFO, "Cannot open file for hashing '%s'. (fopen: %s)", filename, GetErrorStr());
     }
     else
     {
-        md = EVP_get_digestbyname(FileHashName(type));
+        md = EVP_get_digestbyname(HashNameFromId(type));
 
         EVP_DigestInit(&context, md);
 
@@ -105,11 +80,11 @@ void HashString(const char *buffer, int len, unsigned char digest[EVP_MAX_MD_SIZ
         break;
 
     default:
-        md = EVP_get_digestbyname(FileHashName(type));
+        md = EVP_get_digestbyname(HashNameFromId(type));
 
         if (md == NULL)
         {
-            Log(LOG_LEVEL_INFO, "Digest type %s not supported by OpenSSL library", CF_DIGEST_TYPES[type][0]);
+            Log(LOG_LEVEL_INFO, "Digest type %s not supported by OpenSSL library", HashNameFromId(type));
         }
 
         EVP_DigestInit(&context, md);
@@ -154,11 +129,11 @@ void HashPubKey(RSA *key, unsigned char digest[EVP_MAX_MD_SIZE + 1], HashMethod 
         break;
 
     default:
-        md = EVP_get_digestbyname(FileHashName(type));
+        md = EVP_get_digestbyname(HashNameFromId(type));
 
         if (md == NULL)
         {
-            Log(LOG_LEVEL_INFO, "Digest type %s not supported by OpenSSL library", CF_DIGEST_TYPES[type][0]);
+            Log(LOG_LEVEL_INFO, "Digest type %s not supported by OpenSSL library", HashNameFromId(type));
         }
 
         EVP_DigestInit(&context, md);
@@ -176,12 +151,13 @@ void HashPubKey(RSA *key, unsigned char digest[EVP_MAX_MD_SIZE + 1], HashMethod 
 
 /*******************************************************************/
 
-int HashesMatch(unsigned char digest1[EVP_MAX_MD_SIZE + 1], unsigned char digest2[EVP_MAX_MD_SIZE + 1],
+int HashesMatch(const unsigned char digest1[EVP_MAX_MD_SIZE + 1],
+                const unsigned char digest2[EVP_MAX_MD_SIZE + 1],
                 HashMethod type)
 {
     int i, size = EVP_MAX_MD_SIZE;
 
-    size = FileHashSize(type);
+    size = HashSizeFromId(type);
 
     for (i = 0; i < size; i++)
     {
@@ -194,31 +170,50 @@ int HashesMatch(unsigned char digest1[EVP_MAX_MD_SIZE + 1], unsigned char digest
     return true;
 }
 
-char *HashPrintSafe(HashMethod type, unsigned char digest[EVP_MAX_MD_SIZE + 1], char buffer[EVP_MAX_MD_SIZE * 4])
+/* TODO rewrite this ugliness, currently it's not safe, it truncates! */
 /**
- * Thread safe. Note the buffer size.
+ * @WARNING #dst must have enough space to hold the result!
  */
+char *HashPrintSafe(char *dst, size_t dst_size, const unsigned char *digest,
+                    HashMethod type, bool use_prefix)
 {
-    unsigned int i;
+    const char *prefix;
 
-    switch (type)
+    if (use_prefix)
     {
-    case HASH_METHOD_MD5:
-        sprintf(buffer, "MD5=  ");
-        break;
-    default:
-        sprintf(buffer, "SHA=  ");
-        break;
+        switch (type)
+        {
+        case HASH_METHOD_MD5:
+            prefix = "MD5=";
+            break;
+        default:
+            prefix = "SHA=";
+            break;
+        }
+    }
+    else
+    {
+        prefix = "";
     }
 
-    for (i = 0; i < CF_DIGEST_SIZES[type]; i++)
+    size_t dst_len = MIN(dst_size - 1, strlen(prefix));
+    memcpy(dst, prefix, dst_len);
+
+    size_t digest_len = HashSizeFromId(type);
+    assert(dst_size >= strlen(prefix) + digest_len*2 + 1);
+
+    size_t ret = StringBytesToHex(&dst[dst_len], dst_size - dst_len,
+                                  digest, digest_len);
+    assert(ret == 2 * digest_len);
+
+#if 0         /* TODO return proper exit status and check it in the callers */
+    if (ret < 2 * digest_len)
     {
-        sprintf((char *) (buffer + 4 + 2 * i), "%02x", digest[i]);
+        return NULL;
     }
+#endif
 
-    buffer[4 + 2*CF_DIGEST_SIZES[type]] = '\0';
-
-    return buffer;
+    return dst;
 }
 
 
@@ -232,29 +227,4 @@ char *SkipHashType(char *hash)
     }
 
     return str;
-}
-
-const char *FileHashName(HashMethod id)
-{
-    return CF_DIGEST_TYPES[id][0];
-}
-
-int FileHashSize(HashMethod id)
-{
-    return CF_DIGEST_SIZES[id];
-}
-
-HashMethod HashMethodFromString(char *typestr)
-{
-    int i;
-
-    for (i = 0; CF_DIGEST_TYPES[i][0] != NULL; i++)
-    {
-        if (typestr && (strcmp(typestr, CF_DIGEST_TYPES[i][0]) == 0))
-        {
-            return (HashMethod) i;
-        }
-    }
-
-    return HASH_METHOD_NONE;
 }

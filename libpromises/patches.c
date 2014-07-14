@@ -17,7 +17,7 @@
   Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
 
   To the extent this program is licensed as part of the Enterprise
-  versions of CFEngine, the applicable Commerical Open Source License
+  versions of CFEngine, the applicable Commercial Open Source License
   (COSL) may apply to this file if you as a licensee so wish it. See
   included file COSL.txt.
 */
@@ -30,124 +30,25 @@
   FIXME: move to the libcompat/ directory or to the apropriate source file.
 */
 
-#include "cf3.defs.h"
+#include <cf3.defs.h>
 
-#include "audit.h"
+#include <audit.h>
 
 static char *cf_format_strtimestamp(struct tm *tm, char *buf);
 
 /*********************************************************/
 
-/* We assume that s is at least MAX_FILENAME large.
- * MapName() is thread-safe, but the argument is modified. */
-
-#ifdef _WIN32
-# if defined(__MINGW32__)
-
-char *MapNameCopy(const char *s)
-{
-    char *str = xstrdup(s);
-
-    char *c = str;
-    while ((c = strchr(c, '/')))
-    {
-        *c = '\\';
-    }
-
-    return str;
-}
-
-char *MapName(char *s)
-{
-    char *c = s;
-
-    while ((c = strchr(c, '/')))
-    {
-        *c = '\\';
-    }
-    return s;
-}
-
-# elif defined(__CYGWIN__)
-
-char *MapNameCopy(const char *s)
-{
-    Writer *w = StringWriter();
-
-    /* c:\a\b -> /cygdrive/c\a\b */
-    if (s[0] && isalpha(s[0]) && s[1] == ':')
-    {
-        WriterWriteF(w, "/cygdrive/%c", s[0]);
-        s += 2;
-    }
-
-    for (; *s; s++)
-    {
-        /* a//b//c -> a/b/c */
-        /* a\\b\\c -> a\b\c */
-        if (IsFileSep(*s) && IsFileSep(*(s + 1)))
-        {
-            continue;
-        }
-
-        /* a\b\c -> a/b/c */
-        WriterWriteChar(w, *s == '\\' ? '/' : *s);
-    }
-
-    return StringWriterClose(w);
-}
-
-char *MapName(char *s)
-{
-    char *ret = MapNameCopy(s);
-
-    if (strlcpy(s, ret, MAX_FILENAME) >= MAX_FILENAME)
-    {
-        FatalError(ctx, "Expanded path (%s) is longer than MAX_FILENAME ("
-                   TOSTRING(MAX_FILENAME) ") characters",
-                   ret);
-    }
-    free(ret);
-
-    return s;
-}
-
-# else/* !__MINGW32__ && !__CYGWIN__ */
-#  error Unknown NT-based compilation environment
-# endif/* __MINGW32__ || __CYGWIN__ */
-#else /* !_WIN32 */
-
-char *MapName(char *s)
-{
-    return s;
-}
-
-char *MapNameCopy(const char *s)
-{
-    return xstrdup(s);
-}
-
-#endif /* !_WIN32 */
-
-/*********************************************************/
-
-char *MapNameForward(char *s)
-/* Like MapName(), but maps all slashes to forward */
-{
-    while ((s = strchr(s, '\\')))
-    {
-        *s = '/';
-    }
-    return s;
-}
-
-/*********************************************************/
-
 #ifndef HAVE_SETNETGRENT
-
-int setnetgrent(const char *netgroup)
+#if SETNETGRENT_RETURNS_INT
+int
+#else
+void
+#endif
+setnetgrent(const char *netgroup)
 {
+#if SETNETGRENT_RETURNS_INT
     return 0;
+#endif
 }
 
 #endif
@@ -169,10 +70,16 @@ int getnetgrent(char **machinep, char **userp, char **domainp)
 /***********************************************************/
 
 #ifndef HAVE_ENDNETGRENT
-
-int endnetgrent(void)
+#if ENDNETGRENT_RETURNS_INT
+int
+#else
+void
+#endif
+endnetgrent(void)
 {
+#if ENDNETGRENT_RETURNS_INT
     return 1;
+#endif
 }
 
 #endif

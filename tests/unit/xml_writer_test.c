@@ -1,8 +1,7 @@
-#include "cf3.defs.h"
+#include <test.h>
 
-#include "test.h"
-
-#include "xml_writer.h"
+#include <cf3.defs.h>
+#include <xml_writer.h>
 
 /*
  * FIXME: Those unit tests need to be ajusted (or completely changed) if
@@ -77,13 +76,15 @@ int main()
 
 /* STUB OUT */
 
-void __ProgrammingError(const char *file, int lineno, const char *format, ...)
+void __ProgrammingError(ARG_UNUSED const char *file,
+                        ARG_UNUSED int lineno,
+                        ARG_UNUSED const char *format, ...)
 {
     fail();
     exit(42);
 }
 
-void FatalError(char *s, ...)
+void FatalError(ARG_UNUSED char *s, ...)
 {
     fail();
     exit(42);
