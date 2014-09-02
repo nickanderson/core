@@ -8,44 +8,47 @@ body common control
 bundle agent test
 {
   meta:
-    "test_suppress_fail"
+    "test_soft_fail"
       string => "any",
       meta => { "redmine6334" };
 
   vars:
       "first"
         string =>
-          execresult("/var/cfengine/bin/cf-agent -KIf $(this.promise_filename).sub -b example -Dfirst",
+          execresult("$(sys.cf_agent) -KIf $(this.promise_filename).sub -b example -Dfirst",
                      "noshell");
 
       "second"
         string =>
-          execresult("/var/cfengine/bin/cf-agent -If $(this.promise_filename).sub -b example -Dsecond",
+          execresult("$(sys.cf_agent) -If $(this.promise_filename).sub -b example -Dsecond",
                      "noshell");
-
 }
 
 bundle agent check
 {
   vars:
       "pass_strings" slist => { "test", "call_report_now" };
-      "activations" slist => { "first", "second" };
+      "activations" slist => { "test.first", "test.second" };
       "pass_classes" slist => {
-                              "pass_test_first",
-                              "pass_call_report_now_first",
-                              "pass_test_second",
-                              "pass_call_report_now_second",
+                              "pass_test_test_first",
+                              "pass_call_report_now_test_first",
+                              "pass_test_test_second",
+                              "pass_call_report_now_test_second",
                               };
 
   classes:
-      "pass_$(pass_strings)_$(activations)" expression => regcmp("^R: Called from $(pass_strings)",
-                                                                 "$(activations)");
+      "pass_$(pass_strings)_$(activations)" expression => regcmp(".*R: Called from $(pass_strings).*",
+                                                                 "$($(activations))");
 
       "ok" and => { @(pass_classes) },
         comment => "I expect that all @(pass_classes) are defined, as each
                     promise specifically has ifelapsed set to 0.";
 
   reports:
+    DEBUG.!ok::
+      "$(activations): '$($(activations))'";
+    DEBUG::
+      "failure in: $(pass_classes)" ifvarclass => not("$(pass_classes)");
     ok::
       "$(this.promise_filename) Pass";
     !ok::
