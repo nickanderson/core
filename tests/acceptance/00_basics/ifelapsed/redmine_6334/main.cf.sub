@@ -2,7 +2,7 @@ bundle agent example
 {
 
   methods:
-    "test" usebundle => test;
+    "test" usebundle => test, action => now;
 
 }
 
@@ -27,8 +27,13 @@ bundle agent call_report_now
 }
 bundle agent report_now(caller)
 {
+  vars:
+    first::
+       "count" string => "first";
+    second::
+       "count" string => "second";
   reports:
-    "Called from $(caller)"
+    "Called from $(caller) ($(count))"
       action => now;
 }
 

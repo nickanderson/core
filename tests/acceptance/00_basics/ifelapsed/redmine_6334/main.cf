@@ -37,7 +37,7 @@ bundle agent check
                               };
 
   classes:
-      "pass_$(pass_strings)_$(activations)" expression => regcmp(".*Called from $(pass_strings).*",
+      "pass_$(pass_strings)_$(activations)" expression => regcmp(".*R: Called from $(pass_strings).*",
                                                                  "$($(activations))");
 
       "ok" and => { @(pass_classes) },
