@@ -6,7 +6,7 @@
 	- Do not move obstructions in warn policy mode (CFE-2740)
 	- libutils/man.c: allow to override build time
 	- Improve support for Alpine Linux
-	- Move promise comment to verbose (ENT-3414)
+	- Promise comments for file changes moved to verbose (ENT-3414)
 	- cf-execd now re-parses augments on policy reload (CFE-2406)
 	- Fix memory leak in cf-execd, triggered when sending email failed.
 	  (CFE-2712)
@@ -19,7 +19,7 @@
 	  tagging the variable so that it will not be collected to the Enterprise
 	  hub and will not be available in Mission Portal.
 	  Do not tag sys.inet and sys.inet6 for inventory (ENT-3483)
-	- mergedata segfaults when called on a non-container (CFE-2704)
+	- Fix mergedata segfault when called on a non-container (CFE-2704)
 	- fix storage mount promise when existing mount point has a similar path
 	  (CFE-1960)
 	- Properly redirect init script to systemd on debian systems (ENT-3326)
