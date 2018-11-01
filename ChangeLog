@@ -1,6 +1,4 @@
 3.10.5:
-	- Add commit title to changelog by default, if it has ticket number
-	  (ENT-3638)
 	- Bundle name is now part of the log message when aborting a bundle
 	  (CFE-2793)
 	- Class names set by module protocol are automatically canonified
@@ -10,9 +8,8 @@
 	- Do not render templates when passed invalid data (CFE-2194)
 	- Eliminated error messages caused by attempting to kill expired processes
 	  (CFE-2824)
-	- Extend the test for augments classes to cover more cases (ENT-3959)
-	- Fix cf-runalerts systemd unit conditions so the service will run
-	  (ENT-3929)
+	- Fix cf-runalerts systemd unit conditions so the service will run even
+	  when not executable (ENT-3929)
 	- Fix the off-by-one error in cf-runagent background process spawning
 	  (CFE-2873)
 	- Fixed a memory leak which occurred while loading augments files
@@ -20,16 +17,9 @@
 	- Fixed memory leak in lmdb cleanup (CFE-2918)
 	- Fixed memory leaks in cf-agent during bootstrap (CFE-2918)
 	- Fixed small memory leak in cf-serverd (CFE-2918)
-	- Fixed valgrind warning about lmdb writing uninitialized memory
-	  (CFE-2591)
 	- Prevent systemv script from managing processes inside other containers
 	  (ENT-3800)
-	- Read mustache-rendered files in text mode when comparing digest
-	  (ENT-2526)
-	- Test that classes can be defined without constraints (CFE-2000)
-	- disable/enable tests according to their behaviour on new buildslaves
-	  (INF-402)
-	- fix test to work on Solaris, too (INF-402)
+	- Fix mustache re-rendering files un-necessarily on windows (ENT-2526)
 
 3.10.4:
 	- Add IPv6 hard classes with the "ipv6_" prefix (CFE-2310)
