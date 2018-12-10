@@ -6598,8 +6598,7 @@ static FnCallResult FnCallReadData(ARG_UNUSED EvalContext *ctx,
     const char *requested_mode = NULL;
     if (strcmp(fp->name, "readdata") == 0)
     {
-        // readdata gets rid of the size, well almost
-        // csv still has 50MB restriction applied later
+        // readdata gets rid of the size
         size_max = IntFromString("inf");
         requested_mode = RlistScalarValue(args->next);
         if (strcmp("auto", requested_mode) == 0)
@@ -6655,6 +6654,72 @@ static FnCallResult FnCallReadData(ARG_UNUSED EvalContext *ctx,
     {
         return FnFailure();
     }
+
+    return (FnCallResult) { FNCALL_SUCCESS, (Rval) { json, RVAL_TYPE_CONTAINER } };
+}
+
+static FnCallResult FnCallClassExprFilter(EvalContext *ctx,
+                                          ARG_UNUSED Policy const *policy,
+                                          ARG_UNUSED FnCall const *fp,
+                                          Rlist const *args)
+{
+    char const *path = RlistScalarValue(args);
+    size_t const col = IntFromString(RlistScalarValue(args->next));
+    char const *delim = RlistScalarValue(args->next->next);
+    bool has_heading = BooleanFromString(RlistScalarValue(args->next->next->next));
+    int const sort_col = IntFromString(RlistScalarValue(args->next->next->next->next));
+
+    Seq *heading_seq = NULL;
+    char *line;
+    JsonElement *json = JsonArrayCreate(50);
+
+    FILE *csv_file = safe_fopen(path, "r");
+    if (csv_file == NULL)
+    {
+        return FnFailure();
+    }
+
+    while ((line = GetCsvLineNext(csv_file)) != NULL)
+    {
+        Seq *seq = SeqParseCsvString(line);
+        if (seq == NULL)
+        {
+            return FnFailure();
+        }
+
+        free(line);
+
+        if (!has_heading && !IsDefinedClass(ctx, SeqAt(seq, col)))
+        {
+            SeqDestroy(seq);
+            continue;
+        }
+
+        SeqRemove(seq, col);
+
+        if (has_heading)
+        {
+            heading_seq = seq;
+            has_heading = false;
+        }
+        else
+        {
+            size_t len = SeqLength(seq);
+
+            JsonElement *json_object = JsonObjectCreate(len);
+            for (size_t i = 0; i < len; i++)
+            {
+                JsonObjectAppendString(json_object,
+                                       SeqAt(heading_seq, i),
+                                       SeqAt(seq, i));
+            }
+
+            JsonArrayAppendObject(json, json_object);
+            SeqDestroy(seq);
+        }
+    }
+
+    fclose(csv_file);
 
     return (FnCallResult) { FNCALL_SUCCESS, (Rval) { json, RVAL_TYPE_CONTAINER } };
 }
@@ -8601,6 +8666,16 @@ static const FnCallArg READFILE_ARGS[] =
     {NULL, CF_DATA_TYPE_NONE, NULL}
 };
 
+static const FnCallArg CLASSEXPRESSION_FILTERDATA_ARGS[] =
+{
+    {CF_ABSPATHRANGE, CF_DATA_TYPE_STRING, "File name to read"},
+    {CF_VALRANGE, CF_DATA_TYPE_INT, "Column with class expression"},
+    {CF_ANYSTRING, CF_DATA_TYPE_STRING, "String to delimit data by"},
+    {CF_BOOL, CF_DATA_TYPE_OPTION, "CSV file has heading"},
+    {CF_ANYSTRING, CF_DATA_TYPE_STRING, "Column to sort by"},
+    {NULL, CF_DATA_TYPE_NONE, NULL}
+};
+
 static const FnCallArg READSTRINGARRAY_ARGS[] =
 {
     {CF_IDRANGE, CF_DATA_TYPE_STRING, "Array identifier to populate"},
@@ -9242,6 +9317,8 @@ const FnCallType CF_FNCALL_TYPES[] =
                   FNCALL_OPTION_VARARG, FNCALL_CATEGORY_IO, SYNTAX_STATUS_NORMAL),
     FnCallTypeNew("readyaml", CF_DATA_TYPE_CONTAINER, READFILE_ARGS, &FnCallReadData,    "Read a data container from a YAML file",
                   FNCALL_OPTION_VARARG, FNCALL_CATEGORY_IO, SYNTAX_STATUS_NORMAL),
+    FnCallTypeNew("classexpression_filterdata", CF_DATA_TYPE_CONTAINER, CLASSEXPRESSION_FILTERDATA_ARGS, &FnCallClassExprFilter, "Parse a CSV file and create data container filtered by class expressions",
+                  FNCALL_OPTION_NONE, FNCALL_CATEGORY_IO, SYNTAX_STATUS_NORMAL),
     FnCallTypeNew("readintarray", CF_DATA_TYPE_INT, READSTRINGARRAY_ARGS, &FnCallReadIntArray, "Read an array of integers from a file, indexed by first entry on line and sequentially on each line; return line count",
                   FNCALL_OPTION_NONE, FNCALL_CATEGORY_IO, SYNTAX_STATUS_NORMAL),
     FnCallTypeNew("readintlist", CF_DATA_TYPE_INT_LIST, READSTRINGLIST_ARGS, &FnCallReadIntList, "Read and assign a list variable from a file of separated ints",
