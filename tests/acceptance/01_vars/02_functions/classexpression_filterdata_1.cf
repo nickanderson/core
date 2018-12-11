@@ -1,0 +1,49 @@
+body common control
+{
+        inputs => { "../../default.cf.sub" };
+        bundlesequence  => { default("$(this.promise_filename)") };
+        version => "1.0";
+}
+
+bundle agent test
+{
+  meta:
+      "description" -> { "CFE-2768" }
+        string => "Test that classexpression_filterdata() works with column headings filtered by first column.";
+
+}
+bundle agent check
+{
+  vars:
+      "data_file" string => "$(this.promise_filename).csv";
+      "d" data => classexpression_filterdata( $(data_file),
+                                              0,      # Column containing class expression to filter with
+                                              ",",    # Delim (NOT IMPLEMENTED AT TIME OF TEST)
+                                              "true", # Data file contains column headings
+                                              1);     # Column to sort by (NOT IMPLEMENTED AT TIME OF TEST)
+
+  classes:
+
+      # Check if Token has the value we expect
+      "Token_OK" expression => strcmp( "$(d[0][Token])", "net.ipv4.ip_forward" );
+
+      # Check if Value has the value we expect
+      "Value_OK" expression => strcmp( "$(d[0][Value])", "0" );
+
+      # Check if the result contains the number of records we expect.
+      "Length_OK" expression => strcmp( length( d ), 1 );
+
+      # Check if all of our checks are as expected.
+      "TokenValueLength_OK"
+        and => { "Token_OK", "Value_OK", "Length_OK" },
+        scope => "namespace";
+
+  methods:
+
+      "Pass/FAIL"
+        usebundle => dcs_passif( 'TokenValueLength_OK', $(this.promise_filename) );
+
+  reports:
+      DEBUG|EXTRA::
+        "Function returned:$(with)" with => string_mustache( "{{%-top-}}", d );
+}
