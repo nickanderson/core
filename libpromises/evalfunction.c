@@ -6659,6 +6659,188 @@ static FnCallResult FnCallReadData(ARG_UNUSED EvalContext *ctx,
     return (FnCallResult) { FNCALL_SUCCESS, (Rval) { json, RVAL_TYPE_CONTAINER } };
 }
 
+static int ContainerComparator(JsonElement const *left_obj,
+                               JsonElement const *right_obj,
+                               void *user_data)
+{
+    size_t const *index = user_data;
+
+    char const *left = JsonPrimitiveGetAsString(JsonAt(left_obj, *index));
+    char const *right = JsonPrimitiveGetAsString(JsonAt(right_obj, *index));
+    return strcmp(left, right);
+}
+
+static FnCallResult FnCallClassFilterCsv(EvalContext *ctx,
+                                         ARG_UNUSED Policy const *policy,
+                                         FnCall const *fp,
+                                         Rlist const *args)
+{
+    if (args == NULL || args->next == NULL || args->next->next == NULL)
+    {
+        FatalError(ctx, "Function %s requires at least 3 arguments",
+                   fp->name);
+    }
+
+    char const *path = RlistScalarValue(args);
+    bool const has_heading = BooleanFromString(RlistScalarValue(args->next));
+    size_t const class_index = IntFromString(RlistScalarValue(args->next->next));
+    Rlist const *sort_arg = args->next->next->next;
+
+    FILE *csv_file = safe_fopen(path, "r");
+    if (csv_file == NULL)
+    {
+        Log(LOG_LEVEL_ERR,
+            "%s: Failed to read file %s: %s",
+            fp->name, path, GetErrorStrFromCode(errno));
+        FnFailure();
+    }
+
+    Seq *heading = NULL;
+    JsonElement *json = JsonArrayCreate(50);
+    char *line;
+    size_t num_columns = 0;
+
+    // Current line number, for debugging
+    size_t line_number = 0;
+
+    while ((line = GetCsvLineNext(csv_file)) != NULL)
+    {
+        ++line_number;
+        if (line[0] == '#')
+        {
+            Log(LOG_LEVEL_DEBUG, "%s: Ignoring comment at line %lu",
+                fp->name, line_number);
+            free(line);
+            continue;
+        }
+
+        Seq *list = SeqParseCsvString(line);
+        free(line);
+        if (list == NULL)
+        {
+            Log(LOG_LEVEL_WARNING,
+                "%s: Failed to parse line %lu, line ignored.",
+                fp->name, line_number);
+            continue;
+        }
+
+        if (SeqLength(list) == 1 &&
+            strlen(SeqAt(list, 1)) == 0)
+        {
+            Log(LOG_LEVEL_DEBUG,
+                "%s: Found empty line at line %lu",
+                fp->name, line_number);
+            SeqDestroy(list);
+            continue;
+        }
+
+        if (num_columns == 0)
+        {
+            num_columns = SeqLength(list);
+
+            if (class_index >= num_columns)
+            {
+                Log(LOG_LEVEL_ERR,
+                    "%s: Class expression index is out of bounds. Row "
+                    " length %lu, index %lu",
+                    fp->name, num_columns, class_index);
+                FnFailure();
+            }
+        }
+        else if (num_columns != SeqLength(list))
+        {
+            Log(LOG_LEVEL_WARNING,
+                "%s: Line %lu has incorrect amount of elements, "
+                "%lu instead of %lu. Line ignored.",
+                fp->name, line_number, SeqLength(list), num_columns);
+            SeqDestroy(list);
+            continue;
+        }
+
+        if (has_heading && heading == NULL)
+        {
+            Log(LOG_LEVEL_DEBUG, "%s: Found header at line %lu",
+                fp->name, line_number);
+            heading = list;
+            SeqRemove(heading, class_index);
+        }
+        else
+        {
+            if (!IsDefinedClass(ctx, SeqAt(list, class_index)))
+            {
+                SeqDestroy(list);
+                continue;
+            }
+
+            SeqRemove(list, class_index);
+            JsonElement *json_object = JsonObjectCreate(num_columns);
+
+            size_t const num_fields = SeqLength(list);
+            for (size_t i = 0; i < num_fields; i++)
+            {
+                if (has_heading)
+                {
+                    JsonObjectAppendString(json_object,
+                                           SeqAt(heading, i),
+                                           SeqAt(list, i));
+                }
+                else
+                {
+                    size_t const key_len = PRINTSIZE(size_t);
+                    char key[key_len];
+                    xsnprintf(key, key_len, "%zu", i);
+
+                    JsonObjectAppendString(json_object,
+                                           key,
+                                           SeqAt(list, i));
+                }
+            }
+
+            JsonArrayAppendObject(json, json_object);
+            SeqDestroy(list);
+        }
+    }
+
+    if (sort_arg != NULL)
+    {
+        size_t sort_index = IntFromString(RlistScalarValue(sort_arg));
+        if (sort_index == class_index)
+        {
+            Log(LOG_LEVEL_VERBOSE,
+                    "%s: sorting column (%lu) is the same as class "
+                    "expression column (%lu). Not sorting data container.",
+                    fp->name, sort_index, class_index);
+        }
+        else if (sort_index >= num_columns)
+        {
+            Log(LOG_LEVEL_WARNING,
+                    "%s: sorting index %lu out of bounds. Not sorting data "
+                    "container.",
+                    fp->name, sort_index);
+        }
+        else
+        {
+            /* The sorting index needs to be decremented if it is higher than
+             * the class expression index, since the class column is removed
+             * in the data containers. */
+            if (sort_index > class_index)
+            {
+                sort_index--;
+            }
+
+            JsonSort(json, ContainerComparator, &sort_index);
+        }
+    }
+
+    fclose(csv_file);
+    if (heading != NULL)
+    {
+        SeqDestroy(heading);
+    }
+
+    return (FnCallResult) { FNCALL_SUCCESS, (Rval) { json, RVAL_TYPE_CONTAINER } };
+}
+
 static FnCallResult FnCallParseJson(ARG_UNUSED EvalContext *ctx,
                                     ARG_UNUSED const Policy *policy,
                                     ARG_UNUSED const FnCall *fp,
@@ -7126,7 +7308,6 @@ static FnCallResult FnCallFileSexist(EvalContext *ctx, ARG_UNUSED const Policy *
         {
             file_found = false;
         }
-        free(val);
         el = JsonIteratorNextValueByType(&iter, JSON_ELEMENT_TYPE_PRIMITIVE, true);
     }
 
@@ -8601,6 +8782,15 @@ static const FnCallArg READFILE_ARGS[] =
     {NULL, CF_DATA_TYPE_NONE, NULL}
 };
 
+static const FnCallArg CLASSFILTERCSV_ARGS[] =
+{
+    {CF_ABSPATHRANGE, CF_DATA_TYPE_STRING, "File name"},
+    {CF_BOOL, CF_DATA_TYPE_OPTION, "CSV file has heading"},
+    {CF_VALRANGE, CF_DATA_TYPE_INT, "Column index to filter by"},
+    {CF_VALRANGE, CF_DATA_TYPE_INT, "Column index to sort by"},
+    {NULL, CF_DATA_TYPE_NONE, NULL}
+};
+
 static const FnCallArg READSTRINGARRAY_ARGS[] =
 {
     {CF_IDRANGE, CF_DATA_TYPE_STRING, "Array identifier to populate"},
@@ -9056,6 +9246,8 @@ const FnCallType CF_FNCALL_TYPES[] =
                   FNCALL_OPTION_VARARG, FNCALL_CATEGORY_UTILS, SYNTAX_STATUS_NORMAL),
     FnCallTypeNew("classesmatching", CF_DATA_TYPE_STRING_LIST, CLASSMATCH_ARGS, &FnCallClassesMatching, "List the defined classes matching regex arg1 and tag regexes arg2,arg3,...",
                   FNCALL_OPTION_VARARG, FNCALL_CATEGORY_UTILS, SYNTAX_STATUS_NORMAL),
+    FnCallTypeNew("classfiltercsv", CF_DATA_TYPE_CONTAINER, CLASSFILTERCSV_ARGS, &FnCallClassFilterCsv, "Parse a CSV file and create data container filtered by defined classes",
+                  FNCALL_OPTION_VARARG, FNCALL_CATEGORY_IO, SYNTAX_STATUS_NORMAL),
     FnCallTypeNew("countclassesmatching", CF_DATA_TYPE_INT, CLASSMATCH_ARGS, &FnCallClassesMatching, "Count the number of defined classes matching regex arg1",
                   FNCALL_OPTION_VARARG, FNCALL_CATEGORY_UTILS, SYNTAX_STATUS_NORMAL),
     FnCallTypeNew("countlinesmatching", CF_DATA_TYPE_INT, COUNTLINESMATCHING_ARGS, &FnCallCountLinesMatching, "Count the number of lines matching regex arg1 in file arg2",
