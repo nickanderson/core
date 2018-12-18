@@ -8,11 +8,8 @@ body common control
 bundle agent test
 {
   meta:
-      "description" string => "Test that arrays defined by modules can contain slashes just like classic arrays.";
-
-      "test_soft_fail"
-        string => "any",
-        meta => { "CFE-2478" };
+      "description" -> { "CFE-2478" }
+        string => "Test that arrays defined by modules can contain slashes just like classic arrays.";
 
   commands:
 
