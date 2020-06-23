@@ -1,0 +1,12 @@
+    info: Created parent directory for '/tmp/TEST.destination'
+    info: Created directory '/tmp/TEST.destination/subdir'
+    info: Object '/tmp/TEST.destination/subdir' had permissions 0700, changed it to 0755
+    info: Copied file '/tmp/TEST.source/subdir/subdir-file' to '/tmp/TEST.destination/subdir/subdir-file.cfnew' (permissions preserved)
+    info: Moved '/tmp/TEST.destination/subdir/subdir-file.cfnew' to '/tmp/TEST.destination/subdir/subdir-file'
+    info: Object '/tmp/TEST.destination/subdir/subdir-file' had permissions 0600, changed it to 0644
+    info: Updated file '/tmp/TEST.destination/subdir/subdir-file' from 'localhost:/tmp/TEST.source/subdir/subdir-file'
+    info: Copied file '/tmp/TEST.source/file-perms-644' to '/tmp/TEST.destination/file-perms-644.cfnew' (permissions preserved)
+    info: Moved '/tmp/TEST.destination/file-perms-644.cfnew' to '/tmp/TEST.destination/file-perms-644'
+    info: Object '/tmp/TEST.destination/file-perms-644' had permissions 0600, changed it to 0644
+    info: Updated file '/tmp/TEST.destination/file-perms-644' from 'localhost:/tmp/TEST.source/file-perms-644'
+    info: files promise '/tmp/TEST.destination' repaired
