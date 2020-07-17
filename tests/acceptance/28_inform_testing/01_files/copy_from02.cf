@@ -20,9 +20,12 @@ bundle agent setup
 bundle agent main
 {
   files:
-    "$(G.testroot)/TEST.destination"
-      depth_search => recurse("inf"),
-      copy_from => example2("$(G.testroot)/TEST.source");
+    "$(G.testroot)/TEST.destination/subdir/."
+      create => "true";
+    "$(G.testroot)/TEST.destination/file-perms-644"
+      copy_from => example2("$(G.testroot)/TEST.source/file-perms-644");
+    "$(G.testroot)/TEST.destination/subdir/subfile"
+      copy_from => example2("$(G.testroot)/TEST.source/subdir/subdir-file");
 }
 
 body copy_from example(from)

@@ -20,14 +20,16 @@ bundle agent setup
 bundle agent main
 {
   files:
-    "$(G.testroot)/TEST.destination/purgeme"
+    "$(G.testroot)/TEST.destination/subdir/purgeme"
       create => "true",
       handle => "step_one";
-    "$(G.testroot)/TEST.destination"
+    "$(G.testroot)/TEST.destination/file-perms-644"
+      copy_from => example("$(G.testroot)/TEST.source/file-perms-644");
+    "$(G.testroot)/TEST.destination/subdir/."
       depends_on => { "step_one" },
       depth_search => recurse("inf"),
       move_obstructions => "true",
-      copy_from => example3("$(G.testroot)/TEST.source");
+      copy_from => example3("$(G.testroot)/TEST.source/subdir/.");
 }
 
 body copy_from example(from)
