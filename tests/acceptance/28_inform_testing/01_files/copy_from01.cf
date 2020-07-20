@@ -14,6 +14,7 @@ bundle agent setup
   files:
     "$(G.testroot)/TEST.source"
       depth_search => recurse("inf"),
+      perms => og("$(sys.user_data[uid])","$(sys.user_data[gid])"),
       copy_from => example("$(this.promise_dirname)/test_files");
 }
 
