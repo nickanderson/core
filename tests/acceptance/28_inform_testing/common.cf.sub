@@ -56,7 +56,9 @@ bundle agent test
     # NOTE: easy debug, if you change `>` to `|tee` in all below then you can see results in the execution log
     "$(cf_agent) -D RUNDIRECT -KIf $(testcase.filename) > $(testcase.filename).log"
       contain => useshell;
-    "$(G.sed) 's,$(G.testroot),/tmp,g' $(testcase.filename).log > $(testcase.filename).actual"
+    "$(G.sed) '/filestat bailing/d' $(testcase.filename).log > $(testcase.filename).tmp"
+      contain => useshell;
+    "$(G.sed) 's,$(G.testroot),/tmp,g' $(testcase.filename).tmp > $(testcase.filename).actual"
       contain => useshell;
 }
 
@@ -77,7 +79,7 @@ bundle agent check
 
   files:
     ok::
-      "$(testcase.filename).(log|sorted|actual)"
+      "$(testcase.filename).(log|tmp|actual)"
         delete => tidy;
 
   reports:
