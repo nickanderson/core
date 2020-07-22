@@ -1,0 +1,3 @@
+    info: Created directory '/tmp/TEST.cfengine/sub-directory/.'
+    info: Deleted directory '/tmp/TEST.cfengine/sub-directory'
+    info: files promise '/tmp/TEST.cfengine/sub-directory' repaired
