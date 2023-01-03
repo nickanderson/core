@@ -535,7 +535,7 @@ char *ExpandScalar(const EvalContext *ctx, const char *ns, const char *scope,
     assert(string != NULL);
     assert(out != NULL);
     Buffer *current_item = BufferNew();
-    char *scalar_ref = NULL;
+    char scalar_ref[] = NULL;
 
     for (const char *sp = string; *sp != '\0'; sp++)
     {
