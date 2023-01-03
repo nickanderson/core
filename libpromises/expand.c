@@ -535,6 +535,7 @@ char *ExpandScalar(const EvalContext *ctx, const char *ns, const char *scope,
     assert(string != NULL);
     assert(out != NULL);
     Buffer *current_item = BufferNew();
+    char *scalar_ref = NULL;
 
     for (const char *sp = string; *sp != '\0'; sp++)
     {
@@ -551,6 +552,7 @@ char *ExpandScalar(const EvalContext *ctx, const char *ns, const char *scope,
         BufferClear(current_item);
         char varstring = sp[1];
         ExtractScalarReference(current_item,  sp, strlen(sp), true);
+        scalar_ref = strdup(BufferData(current_item));
         sp += BufferSize(current_item) + 2;
 
         if (IsCf3VarString(BufferData(current_item)))
@@ -608,7 +610,7 @@ char *ExpandScalar(const EvalContext *ctx, const char *ns, const char *scope,
     BufferDestroy(current_item);
 
     LogDebug(LOG_MOD_EXPAND, "ExpandScalar(%s:%s.%s)  =>  %s",
-             SAFENULL(ns), SAFENULL(scope), BufferData(current_item), BufferData(out));
+             SAFENULL(ns), SAFENULL(scope), scalar_ref, BufferData(out));
 
     return out_belongs_to_us ? BufferClose(out) : BufferGet(out);
 }
