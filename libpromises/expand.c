@@ -611,6 +611,7 @@ char *ExpandScalar(const EvalContext *ctx, const char *ns, const char *scope,
 
     LogDebug(LOG_MOD_EXPAND, "ExpandScalar(%s:%s.%s)  =>  %s",
              SAFENULL(ns), SAFENULL(scope), scalar_ref, BufferData(out));
+    free(scalar_ref);
 
     return out_belongs_to_us ? BufferClose(out) : BufferGet(out);
 }
