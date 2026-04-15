@@ -47,6 +47,7 @@ typedef struct
     char *changes_filename;
     Item *file_start;
     int num_edits;
+    int pass;  // Current convergence pass (1 to CF_DONEPASSES-1)
 #ifdef HAVE_LIBXML2
     xmlDocPtr xmldoc;
 #endif
