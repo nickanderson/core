@@ -49,6 +49,9 @@
 
 #define CF_MAX_REPLACE 20
 
+// Check if we're on the final convergence pass
+#define EditContextIsFinalPass(ec) ((ec)->pass >= CF_DONEPASSES - 1)
+
 /*****************************************************************************/
 
 enum editlinetypesequence
@@ -393,7 +396,7 @@ static PromiseResult VerifyLineDeletions(EvalContext *ctx, const Promise *pp, Ed
     else if (!SelectRegion(ctx, *start, &begin_ptr, &end_ptr, &a, edcontext))
     {
         // Allow retry in subsequent passes if region doesn't exist yet (convergence)
-        if (edcontext->pass < CF_DONEPASSES - 1)
+        if (!EditContextIsFinalPass(edcontext))
         {
             Log(LOG_LEVEL_VERBOSE,
                 "The promised line deletion '%s' could not select edit region in '%s' (pass %d/%d, will retry)",
@@ -515,7 +518,7 @@ static PromiseResult VerifyColumnEdits(EvalContext *ctx, const Promise *pp, Edit
     else if (!SelectRegion(ctx, *start, &begin_ptr, &end_ptr, &a, edcontext))
     {
         // Allow retry in subsequent passes if region doesn't exist yet (convergence)
-        if (edcontext->pass < CF_DONEPASSES - 1)
+        if (!EditContextIsFinalPass(edcontext))
         {
             Log(LOG_LEVEL_VERBOSE,
                 "The promised column edit '%s' could not select edit region in '%s' (pass %d/%d, will retry)",
@@ -605,7 +608,7 @@ static PromiseResult VerifyPatterns(EvalContext *ctx, const Promise *pp, EditCon
     else if (!SelectRegion(ctx, *start, &begin_ptr, &end_ptr, &a, edcontext))
     {
         // Allow retry in subsequent passes if region doesn't exist yet (convergence)
-        if (edcontext->pass < CF_DONEPASSES - 1)
+        if (!EditContextIsFinalPass(edcontext))
         {
             Log(LOG_LEVEL_VERBOSE,
                 "The promised pattern replace '%s' could not select edit region in '%s' (pass %d/%d, will retry)",
@@ -809,7 +812,7 @@ static PromiseResult VerifyLineInsertions(EvalContext *ctx, const Promise *pp, E
     else if (!SelectRegion(ctx, *start, &begin_ptr, &end_ptr, &a, edcontext))
     {
         // Allow retry in subsequent passes if region doesn't exist yet (convergence)
-        if (edcontext->pass < CF_DONEPASSES - 1)
+        if (!EditContextIsFinalPass(edcontext))
         {
             Log(LOG_LEVEL_VERBOSE,
                 "The promised line insertion '%s' could not select edit region in '%s' (pass %d/%d, will retry)",
