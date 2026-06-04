@@ -1,0 +1,87 @@
+#######################################################
+#
+# ENT-3868: Persistent class logging should distinguish
+# creating a new class from resetting an existing timer.
+#
+# First run:  expect "Creating persistent class"
+# Second run: expect "Resetting persistent class"
+#
+#######################################################
+
+body common control
+{
+      inputs => { "../../default.sub.cf" };
+      bundlesequence  => { default("$(this.promise_filename)") };
+      version => "1.0";
+}
+
+bundle agent init
+{
+  # Clean up any leftover persistent class from a previous test run
+  commands:
+      "$(G.echo)" classes => init_cancel_always;
+}
+
+body classes init_cancel_always
+{
+      cancel_repaired => { "logging_test_class" };
+      cancel_notkept => { "logging_test_class" };
+      cancel_kept => { "logging_test_class" };
+}
+
+bundle agent test
+{
+  commands:
+      # First run: define the persistent class
+      "$(sys.cf_agent) -Kv -f $(this.promise_filename).sub > /tmp/TESTDIR.cfengine/persistent_log_run1.log 2>&1"
+        contain => useshell,
+        classes => test_always("first_done");
+}
+
+body contain useshell
+{
+      useshell => "useshell";
+}
+
+body classes test_always(x)
+{
+      promise_repaired => { "$(x)" };
+      promise_kept => { "$(x)" };
+      repair_failed => { "$(x)" };
+      repair_denied => { "$(x)" };
+      repair_timeout => { "$(x)" };
+}
+
+bundle agent check
+{
+  commands:
+    first_done::
+      # Second run: class already exists, should reset timer
+      "$(sys.cf_agent) -Kv -f $(this.promise_filename).sub > /tmp/TESTDIR.cfengine/persistent_log_run2.log 2>&1"
+        contain => useshell,
+        classes => test_always("second_done");
+
+  classes:
+    second_done::
+      "first_ok" expression => returnszero(
+        "$(G.grep) 'Creating persistent class.*logging_test_class' /tmp/TESTDIR.cfengine/persistent_log_run1.log",
+        "useshell");
+      "second_ok" expression => returnszero(
+        "$(G.grep) 'Resetting persistent class.*logging_test_class' /tmp/TESTDIR.cfengine/persistent_log_run2.log",
+        "useshell");
+      "ok" and => { "first_ok", "second_ok" };
+
+  reports:
+    DEBUG.second_done.!first_ok::
+      "FAIL: first run did not log 'Creating persistent class'";
+    DEBUG.second_done.!second_ok::
+      "FAIL: second run did not log 'Resetting persistent class'";
+    !first_done::
+      "$(this.promise_filename) FAIL (first sub-agent run did not complete)";
+    first_done.!second_done::
+      "$(this.promise_filename) FAIL (second sub-agent run did not complete)";
+    second_done.ok::
+      "$(this.promise_filename) Pass";
+    second_done.!ok::
+      "$(this.promise_filename) FAIL";
+}

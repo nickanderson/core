@@ -1,0 +1,21 @@
+body common control
+{
+      bundlesequence => { run };
+}
+
+bundle agent run
+{
+  commands:
+      # Use a commands promise with a classes body so that the persistent
+      # class is re-saved on every run.  (classes: type promises skip
+      # re-evaluation when the class is already defined from persistent DB.)
+      "/bin/true"
+        classes => persist_logging_test;
+}
+
+body classes persist_logging_test
+{
+      promise_repaired => { "logging_test_class" };
+      promise_kept => { "logging_test_class" };
+      persist_time => "120";
+}
