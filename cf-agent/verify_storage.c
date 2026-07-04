@@ -366,11 +366,23 @@ static bool FileSystemMountedCorrectly(Seq *list, char *name, const Attributes *
                       mp->host, mp->source, name);
                 return false;
             }
-            else
+
+            /* CFE-90: Check that mount options match the promise */
+            if (a->mount.mount_options != NULL)
             {
-                Log(LOG_LEVEL_VERBOSE, "File system '%s' seems to be mounted correctly", mp->source);
-                break;
+                char *opts = Rlist2String(a->mount.mount_options, ",");
+                if (mp->options == NULL || strcmp(mp->options, opts) != 0)
+                {
+                    Log(LOG_LEVEL_INFO, "Mount options for '%s' do not match promise (actual: '%s', promised: '%s')",
+                          name, mp->options ? mp->options : "(none)", opts);
+                    free(opts);
+                    return false;
+                }
+                free(opts);
             }
+
+            Log(LOG_LEVEL_VERBOSE, "File system '%s' seems to be mounted correctly", mp->source);
+            break;
         }
     }
 
@@ -461,7 +473,52 @@ static PromiseResult VerifyMountPromise(EvalContext *ctx, char *name, const Attr
     {
         if (!a->mount.unmount)
         {
-            if (!MakeParentDirectory(dir, a->move_obstructions, NULL))
+            /* CFE-90: Check if filesystem IS mounted but options don't match (vs. not mounted at all) */
+            bool already_mounted = false;
+            for (size_t i = 0; i < SeqLength(GetGlobalMountedFSList()); i++)
+            {
+                Mount *mp = SeqAt(GetGlobalMountedFSList(), i);
+                if (mp != NULL && strcmp(name, mp->mounton) == 0)
+                {
+                    already_mounted = true;
+                    break;
+                }
+            }
+
+            if (already_mounted && a->mount.mount_options != NULL)
+            {
+                /* CFE-90: Filesystem is mounted but with wrong options - try remount */
+                if (!MakeParentDirectory(dir, a->move_obstructions, NULL))
+                {
+                    Log(LOG_LEVEL_DEBUG,
+                        "Could not create parent directory '%s' for remount",
+                        dir);
+                }
+
+                /* Build mount command: mount -o remount,<options> <mountpoint> */
+                char mount_cmd[CF_BUFSIZE];
+                snprintf(mount_cmd, sizeof(mount_cmd),
+                         "/bin/mount -o remount,%s %s", options, name);
+                Log(LOG_LEVEL_INFO, "CFE-90: Options mismatch detected, executing: %s", mount_cmd);
+
+                int ret = system(mount_cmd);
+                if (ret == 0)
+                {
+                    cfPS(ctx, LOG_LEVEL_INFO, PROMISE_RESULT_CHANGE, pp, a,
+                         "Successfully remounted '%s' with options '%s'", name, options);
+                    result = PromiseResultUpdate(result, PROMISE_RESULT_CHANGE);
+                }
+                else
+                {
+                    Log(LOG_LEVEL_ERR, "CFE-90: Remount of '%s' failed with exit code %d", name, ret);
+                    cfPS(ctx, LOG_LEVEL_ERR, PROMISE_RESULT_FAIL, pp, a,
+                         "Failed to remount '%s' with options '%s'", name, options);
+                    result = PromiseResultUpdate(result, PROMISE_RESULT_FAIL);
+                }
+                changes++;
+                CF_MOUNTALL = true;
+            }
+            else
             {
                 // Could not create parent directory, assume this is okay,
                 // verbose logging in MakeParentDirectory()

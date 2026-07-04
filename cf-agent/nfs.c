@@ -53,6 +53,8 @@ static void GetHostAndSource(const char *buf, char *host, char *source);
 static void AugmentMountInfo(Seq *list, char *host, char *source, char *mounton, char *options);
 static bool MatchFSInFstab(char *match);
 static void DeleteThisItem(Item **liststart, Item *entry);
+static char *GetFstabEntryOptions(char *mountpt);
+static void ReplaceFstabEntry(Item **liststart, char *mountpt, char *new_entry);
 
 static const char *const VMOUNTCOMM[] =
 {
@@ -534,12 +536,29 @@ int VerifyInFstab(EvalContext *ctx, char *name, const Attributes *a, const Promi
 
     if (!MatchFSInFstab(mountpt))
     {
+        /* CFE-90: Entry not in fstab - add it */
         AppendItem(&FSTABLIST, fstab, NULL);
         FSTAB_EDITS++;
         cfPS(ctx, LOG_LEVEL_INFO, PROMISE_RESULT_CHANGE, pp, a, "Adding file system entry '%s' to '%s'", fstab,
              VFSTAB[VSYSTEMHARDCLASS]);
         *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
         changes += 1;
+    }
+    else
+    {
+        /* CFE-90: Entry exists - check if options differ and update if needed */
+        char *existing_opts = GetFstabEntryOptions(mountpt);
+        if (existing_opts != NULL && strcmp(existing_opts, opts) != 0)
+        {
+            /* Replace the entire fstab entry with the corrected options */
+            ReplaceFstabEntry(&FSTABLIST, mountpt, fstab);
+            FSTAB_EDITS++;
+            cfPS(ctx, LOG_LEVEL_INFO, PROMISE_RESULT_CHANGE, pp, a, "Updating file system entry for '%s' in '%s' (options: '%s' -> '%s')",
+                 mountpt, VFSTAB[VSYSTEMHARDCLASS], existing_opts, opts);
+            *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
+            changes += 1;
+        }
+        free(existing_opts);
     }
 
     free(opts);
@@ -953,6 +972,84 @@ static void DeleteThisItem(Item **liststart, Item *entry)
         }
 
         free((char *) entry);
+    }
+}
+
+/*******************************************************************/
+/* CFE-90: Helper functions for fstab options comparison          */
+/*******************************************************************/
+
+static char *GetFstabEntryOptions(char *mountpt)
+/* Extract the options field from the fstab entry matching mountpt.
+ * Returns a dynamically allocated string or NULL. */
+{
+    for (Item *ip = FSTABLIST; ip != NULL; ip = ip->next)
+    {
+        if (ip->name == NULL || ip->name[0] == '#')
+        {
+            continue;
+        }
+
+        /* Parse the fstab line to find the options field */
+        char *orig = xstrdup(ip->name);
+        char *saveptr = NULL;
+        char *token = strtok_r(orig, " \t", &saveptr);
+        int field = 0;
+        bool found = false;
+
+        while (token != NULL && !found)
+        {
+            if (field == 1)
+            {
+                if (strcmp(token, mountpt) == 0)
+                {
+                    /* Found matching mountpoint - get the 4th field (options, field index 3) */
+                    char *tok = strtok_r(NULL, " \t", &saveptr); /* skip field 2: type */
+                    if (tok != NULL)
+                    {
+                        free(orig);
+                        return xstrdup(tok);  /* return field 3: options */
+                    }
+                }
+            }
+            field++;
+            token = strtok_r(NULL, " \t", &saveptr);
+        }
+        free(orig);
+    }
+
+    return NULL;
+}
+
+static void ReplaceFstabEntry(Item **liststart, char *mountpt, char *new_entry)
+/* Replace the fstab entry for mountpt with new_entry */
+{
+    for (Item *ip = *liststart; ip != NULL; ip = ip->next)
+    {
+        if (ip->name != NULL && ip->name[0] != '#')
+        {
+            char *orig = xstrdup(ip->name);
+            char *saveptr = NULL;
+            char *token = strtok_r(orig, " \t", &saveptr);
+            int field = 0;
+            bool found = false;
+
+            while (token != NULL && !found)
+            {
+                if (field == 1)
+                {
+                    if (strcmp(token, mountpt) == 0)
+                    {
+                        /* Found matching mountpoint - replace the entire line */
+                        ip->name = xstrdup(new_entry);
+                        found = true;
+                    }
+                }
+                field++;
+                token = strtok_r(NULL, " \t", &saveptr);
+            }
+            free(orig);
+        }
     }
 }
 

@@ -49,6 +49,9 @@
 
 static SSL_CTX *SSLSERVERCONTEXT = NULL;
 
+/* Community build stub */
+bool StringIsSHA1Hex(const char *s);
+
 #define MAX_ACCEPT_RETRIES 5
 
 /**
@@ -1198,5 +1201,12 @@ protocol_error:
     SendTransaction(conn->conn_info, sendbuffer, 0, CF_DONE);
     Log(LOG_LEVEL_INFO,
         "Closing connection due to illegal request: %s", recvbuffer);
+    return false;
+}
+
+/* CFE-90 / community build: stub for StringIsSHA1Hex used in enterprise code */
+bool StringIsSHA1Hex(const char *s)
+{
+    /* Enterprise-only feature — always return false for community builds */
     return false;
 }
