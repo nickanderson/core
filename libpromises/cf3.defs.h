@@ -911,7 +911,8 @@ typedef struct
     char *host;
     char *source;
     char *mounton;
-    char *options;
+    char *options;          /* user-specified promise options (e.g. "rw,noatime") */
+    char *raw_opts;         /* full kernel-resolved options from /proc/mounts */
     int unmount;
 } Mount;
 

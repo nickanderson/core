@@ -50,6 +50,9 @@ static Item *FSTABLIST = NULL; /* GLOBAL_X */
 
 static void GetHostAndSource(const char *buf, char *host, char *source);
 
+static char **ParseOptionsList(const char *opts);
+static void FreeOptionsList(char **arr);
+
 static void AugmentMountInfo(Seq *list, char *host, char *source, char *mounton, char *options);
 static bool MatchFSInFstab(char *match);
 static void DeleteThisItem(Item **liststart, Item *entry);
@@ -174,6 +177,145 @@ static void GetHostAndSource(const char *buf, char *host, char *source)
         source[source_index++] = buf[index++];
     }
     source[source_index] = '\0';
+}
+
+/* Parse comma-separated options string into an array of individual option strings.
+ * Returns a newly allocated array of char* pointers, terminated by NULL.
+ * Caller must free the array itself (not the individual strings). */
+static char **ParseOptionsList(const char *opts)
+{
+    if (opts == NULL || opts[0] == '\0')
+    {
+        char **arr = xcalloc(1, sizeof(char *));
+        arr[0] = NULL;
+        return arr;
+    }
+
+    /* First pass: count options */
+    int count = 0;
+    for (const char *p = opts; *p; p++)
+    {
+        if (*p == ',')
+            count++;
+    }
+    count++; /* number of tokens = number of commas + 1 */
+
+    char **arr = xcalloc(count + 1, sizeof(char *));
+    char *copy = xstrdup(opts);
+    int idx = 0;
+    char *token = strtok(copy, ",");
+    while (token != NULL && idx < count)
+    {
+        arr[idx++] = xstrdup(token);
+        token = strtok(NULL, ",");
+    }
+    free(copy);
+    return arr;
+}
+
+static void FreeOptionsList(char **arr)
+{
+    if (arr == NULL)
+        return;
+    for (int i = 0; arr[i] != NULL; i++)
+        free(arr[i]);
+    free(arr);
+}
+
+bool OptionsSubsetMatches(const char *promised_opts, const char *actual_opts)
+/* Check whether all options specified in 'promised_opts' are present in
+ * 'actual_opts'.  Kernel-added NFS auto-negotiated options (vers=, rsize=,
+ * wsize=, timeo=, retrans=, sec=, addr=, mountport=, mountproto=,
+ * mountvers=, rsize, wsize, namlen, local_lock, mountaddr) are ignored in
+ * the actual set.  Contradictory options (e.g. noatime vs relatime, hard
+ * vs soft) cause a mismatch.  Ordering differences are irrelevant. */
+{
+    if (promised_opts == NULL || promised_opts[0] == '\0')
+        return true;
+
+    char **promised = ParseOptionsList(promised_opts);
+    char **actual = ParseOptionsList(actual_opts);
+
+    bool mismatch = false;
+
+    for (int p = 0; promised[p] != NULL; p++)
+    {
+        char *popt = promised[p];
+        bool found = false;
+        bool contradicted = false;
+
+        for (int a = 0; actual[a] != NULL; a++)
+        {
+            char *aopt = actual[a];
+
+            /* Direct match */
+            if (strcmp(popt, aopt) == 0)
+            {
+                found = true;
+                break;
+            }
+
+            /* Inverse pair check via "no" prefix */
+            if (strncmp(popt, "no", 2) == 0)
+            {
+                if (strcmp(popt + 2, aopt) == 0)
+                    contradicted = true;
+            }
+            else if (strncmp(aopt, "no", 2) == 0)
+            {
+                if (strcmp(popt, aopt + 2) == 0)
+                    contradicted = true;
+            }
+
+            /* Known inverse pairs without "no" prefix */
+            if ((strcmp(popt, "noatime") == 0 && strcmp(aopt, "relatime") == 0) ||
+                (strcmp(popt, "relatime") == 0 && strcmp(aopt, "noatime") == 0))
+            {
+                contradicted = true;
+            }
+            if ((strcmp(popt, "hard") == 0 && strcmp(aopt, "soft") == 0) ||
+                (strcmp(popt, "soft") == 0 && strcmp(aopt, "hard") == 0))
+            {
+                contradicted = true;
+            }
+            if ((strcmp(popt, "sync") == 0 && strcmp(aopt, "async") == 0) ||
+                (strcmp(popt, "async") == 0 && strcmp(aopt, "sync") == 0))
+            {
+                contradicted = true;
+            }
+            if ((strcmp(popt, "ro") == 0 && strcmp(aopt, "rw") == 0) ||
+                (strcmp(popt, "rw") == 0 && strcmp(aopt, "ro") == 0))
+            {
+                contradicted = true;
+            }
+
+            /* Alias: user says "tcp", actual has "proto=tcp" */
+            if ((strcmp(popt, "tcp") == 0 && strcmp(aopt, "proto=tcp") == 0) ||
+                (strcmp(popt, "udp") == 0 && strcmp(aopt, "proto=udp") == 0) ||
+                (strcmp(popt, "proto=tcp") == 0 && strcmp(aopt, "tcp") == 0) ||
+                (strcmp(popt, "proto=udp") == 0 && strcmp(aopt, "udp") == 0))
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (contradicted)
+        {
+            mismatch = true;
+            break;
+        }
+        if (!found)
+        {
+            mismatch = true;
+            break;
+        }
+    }
+
+    FreeOptionsList(promised);
+    FreeOptionsList(actual);
+
+    return !mismatch;
 }
 
 bool LoadMountInfo(Seq *list)
@@ -348,21 +490,41 @@ bool LoadMountInfo(Seq *list)
 
         Log(LOG_LEVEL_DEBUG, "LoadMountInfo: host '%s', source '%s', mounton '%s'", host, source, mounton);
 
+        /* Extract the actual mount options from the parenthesized portion of mount output.
+         * mount -va output format: host:source on /mountpoint type fstype (opts) */
+        char mountopts[CF_BUFSIZE];
+        mountopts[0] = '\0';
+        char *paren = strstr(vbuff, "(");
+        if (paren != NULL)
+        {
+            char *end = strchr(paren, ')');
+            if (end != NULL)
+            {
+                strlcpy(mountopts, paren + 1, sizeof(mountopts));
+                /* Strip trailing whitespace */
+                size_t len = strlen(mountopts);
+                while (len > 0 && (mountopts[len - 1] == ' ' || mountopts[len - 1] == '\t'))
+                {
+                    mountopts[--len] = '\0';
+                }
+            }
+        }
+
         if (panfs)
         {
-            AugmentMountInfo(list, host, source, mounton, "panfs");
+            AugmentMountInfo(list, host, source, mounton, mountopts[0] != '\0' ? mountopts : "panfs");
         }
         else if (nfs)
         {
-            AugmentMountInfo(list, host, source, mounton, "nfs");
+            AugmentMountInfo(list, host, source, mounton, mountopts[0] != '\0' ? mountopts : "nfs");
         }
         else if (cifs)
         {
-            AugmentMountInfo(list, host, source, mounton, "cifs");
+            AugmentMountInfo(list, host, source, mounton, mountopts[0] != '\0' ? mountopts : "cifs");
         }
         else
         {
-            AugmentMountInfo(list, host, source, mounton, NULL);
+            AugmentMountInfo(list, host, source, mounton, mountopts[0] != '\0' ? mountopts : NULL);
         }
     }
 
@@ -394,9 +556,12 @@ static void AugmentMountInfo(Seq *list, char *host, char *source, char *mounton,
         entry->mounton = xstrdup(mounton);
     }
 
+    /* Store the full kernel-resolved options in raw_opts.
+     * For unmounted filesystems (options == NULL), options field stays NULL
+     * and will be checked in FileSystemMountedCorrectly as "not mounted". */
     if (options)
     {
-        entry->options = xstrdup(options);
+        entry->raw_opts = xstrdup(options);
     }
 
     SeqAppend(list, entry);
@@ -428,6 +593,11 @@ void DeleteMountInfo(Seq *list)
         if (entry->options)
         {
             free(entry->options);
+        }
+
+        if (entry->raw_opts)
+        {
+            free(entry->raw_opts);
         }
     }
 

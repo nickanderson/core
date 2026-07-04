@@ -367,14 +367,21 @@ static bool FileSystemMountedCorrectly(Seq *list, char *name, const Attributes *
                 return false;
             }
 
-            /* CFE-90: Check that mount options match the promise */
+            /* CFE-90: Check that mount options match the promise
+             * Use subset-based matching: all promised options must be present
+             * in the actual (kernel-resolved) options.  Kernel-added auto-negotiated
+             * options (vers=, rsize=, wsize=, timeo=, etc.) are ignored. */
             if (a->mount.mount_options != NULL)
             {
                 char *opts = Rlist2String(a->mount.mount_options, ",");
-                if (mp->options == NULL || strcmp(mp->options, opts) != 0)
+                if (mp->raw_opts == NULL || mp->raw_opts[0] == '\0'
+                    || !OptionsSubsetMatches(opts, mp->raw_opts))
                 {
-                    Log(LOG_LEVEL_INFO, "Mount options for '%s' do not match promise (actual: '%s', promised: '%s')",
-                          name, mp->options ? mp->options : "(none)", opts);
+                    Log(LOG_LEVEL_INFO,
+                        "Mount options for '%s' do not match promise (actual: '%s', promised: '%s')",
+                        name,
+                        mp->raw_opts ? mp->raw_opts : "(none)",
+                        opts);
                     free(opts);
                     return false;
                 }
