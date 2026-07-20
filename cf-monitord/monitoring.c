@@ -165,8 +165,11 @@ void GetObservable(int i, char *name, size_t name_size, char *desc, size_t desc_
         }
         else
         {
-            strncpy(name, OBSERVABLES[i][0], name_size - 1);
-            strncpy(desc, OBSERVABLES[i][1], desc_size - 1);
+            /* OBSERVABLES only holds the named observables (indices < ob_spare);
+             * a slot at or above ob_spare with no registered measurement is
+             * spare. Do not index OBSERVABLES here. */
+            strncpy(name, "spare", name_size - 1);
+            strncpy(desc, "unused", desc_size - 1);
         }
     }
 }
