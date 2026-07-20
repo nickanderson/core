@@ -162,12 +162,15 @@ static void print_struct_lock_data(
 static void print_struct_averages(
     const MDB_val value, const bool strip_strings, const char *tskey_filename)
 {
-    assert(sizeof(Averages) == value.mv_size);
-    if (sizeof(Averages) != value.mv_size)
+    // cf-monitord stores only the in-use measurement slots (see
+    // AveragesUsedSize), so a record is normally shorter than the full struct;
+    // a record written before CF_OBSERVABLES was raised is likewise short.
+    // Accept any size up to the full struct and copy into a zeroed struct so
+    // the un-stored trailing slots read back as zero.
+    assert(value.mv_size <= sizeof(Averages));
+    if (value.mv_size > sizeof(Averages))
     {
-        // Fall back to simple printing in release builds. Records written
-        // before CF_OBSERVABLES was raised are shorter, but a running agent
-        // migrates them (see dbm_migration_observations.c) before they are read.
+        // Unexpected: larger than the struct. Fall back to simple printing.
         print_json_string(value.mv_data, value.mv_size, strip_strings);
     }
     else
@@ -175,7 +178,8 @@ static void print_struct_averages(
         // TODO: clean up Averages
         char **obnames = NULL;
         Averages averages;
-        memcpy(&averages, value.mv_data, sizeof(averages));
+        memset(&averages, 0, sizeof(averages));
+        memcpy(&averages, value.mv_data, value.mv_size);
         const time_t last_seen = averages.last_seen;
 
         obnames = GetObservableNames(tskey_filename);

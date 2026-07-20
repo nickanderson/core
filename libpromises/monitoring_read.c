@@ -25,6 +25,7 @@
 
 #include <monitoring_read.h>
 
+#include <stddef.h>                                       /* offsetof */
 #include <file_lib.h>                                     /* FILE_SEPARATOR */
 #include <known_dirs.h>
 
@@ -225,6 +226,31 @@ bool NovaHasSlot(int idx)
     return idx < ob_spare || SLOTS[idx - ob_spare];
 }
 
+/*
+ * The number of bytes of an Averages record that are actually in use. The
+ * built-in observables (indices 0..ob_spare-1) are always present; the custom
+ * slots above them are used only where a measurement is registered. cf-monitord
+ * writes only this many bytes per timekey, so unused trailing slots (up to 200
+ * once CF_OBSERVABLES is 300) cost nothing on disk. Readers zero their buffer
+ * and DBPrivRead clamps the copy, so a short record reads back with its unused
+ * slots as zero.
+ */
+size_t AveragesUsedSize(void)
+{
+    Nova_LoadSlots();
+
+    int highest = ob_spare - 1;
+    for (int i = CF_OBSERVABLES - 1; i >= ob_spare; i--)
+    {
+        if (SLOTS[i - ob_spare] != NULL)
+        {
+            highest = i;
+            break;
+        }
+    }
+    return offsetof(Averages, Q) + (size_t) (highest + 1) * sizeof(QPoint);
+}
+
 const char *NovaGetSlotName(int idx)
 {
     Nova_LoadSlots();
@@ -324,6 +350,10 @@ bool GetRecordForTime(CF_DB *db, time_t time, Averages *result)
 
     MakeTimekey(time, timekey);
 
+    /* Records may be shorter than sizeof(Averages) (see AveragesUsedSize), so
+     * zero the buffer first: DBPrivRead clamps the copy to the stored size and
+     * the unused trailing slots must read back as zero. */
+    memset(result, 0, sizeof(Averages));
     return ReadDB(db, timekey, result, sizeof(Averages));
 }
 
