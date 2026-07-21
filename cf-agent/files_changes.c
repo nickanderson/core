@@ -34,6 +34,12 @@
 #include <eval_context.h>
 #include <known_dirs.h>
 
+bool IsChangeSilenced(const Attributes *attr, FileChangeSilence category)
+{
+    assert(attr != NULL);
+    return (attr->change.silence & category) != 0;
+}
+
 /*
   The format of the changes database is as follows:
 
@@ -495,10 +501,13 @@ bool FileChangesCheckAndUpdateHash(EvalContext *ctx,
         different = (memcmp(digest, dbdigest, size) != 0);
         if (different)
         {
-            Log(LOG_LEVEL_INFO, "Hash '%s' for '%s' changed!", HashNameFromId(type), filename);
-            if (pp->comment)
+            if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_CONTENT))
             {
-                Log(LOG_LEVEL_VERBOSE, "Preceding promise '%s'", pp->comment);
+                Log(LOG_LEVEL_INFO, "Hash '%s' for '%s' changed!", HashNameFromId(type), filename);
+                if (pp->comment)
+                {
+                    Log(LOG_LEVEL_VERBOSE, "Preceding promise '%s'", pp->comment);
+                }
             }
         }
     }
@@ -521,9 +530,16 @@ bool FileChangesCheckAndUpdateHash(EvalContext *ctx,
         {
             const char *action = found ? "Updated" : "Stored";
             char buffer[CF_HOSTKEY_STRING_SIZE];
-            RecordChange(ctx, pp, attr, "%s %s hash for '%s' (%s)",
-                         action, HashNameFromId(type), filename,
-                         HashPrintSafe(buffer, sizeof(buffer), digest, type, true));
+            if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_CONTENT))
+            {
+                RecordChange(ctx, pp, attr, "%s %s hash for '%s' (%s)",
+                             action, HashNameFromId(type), filename,
+                             HashPrintSafe(buffer, sizeof(buffer), digest, type, true));
+            }
+            else
+            {
+                SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+            }
             *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
 
             WriteHash(dbp, type, filename, digest);
@@ -548,9 +564,12 @@ bool FileChangesCheckAndUpdateHash(EvalContext *ctx,
     return ret;
 }
 
-bool FileChangesLogNewFile(const char *path, const Promise *pp)
+bool FileChangesLogNewFile(const char *path, const Promise *pp, bool silent)
 {
-    Log(LOG_LEVEL_NOTICE, "New file '%s' found", path);
+    if (!silent)
+    {
+        Log(LOG_LEVEL_NOTICE, "New file '%s' found", path);
+    }
     return FileChangesLogChange(path, FILE_STATE_NEW, "New file found", pp);
 }
 
@@ -618,13 +637,23 @@ void FileChangesCheckAndUpdateDirectory(EvalContext *ctx, const Attributes *attr
             char path[strlen(name) + strlen(db_file) + 2];
             xsnprintf(path, sizeof(path), "%s/%s", name, db_file);
 
-            Log(LOG_LEVEL_NOTICE, "File '%s' no longer exists", path);
+            if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_REMOVE))
+            {
+                Log(LOG_LEVEL_NOTICE, "File '%s' no longer exists", path);
+            }
             if (MakingInternalChanges(ctx, pp, attr, result,
                                       "record removal of '%s'", path))
             {
                 if (FileChangesLogChange(path, FILE_STATE_REMOVED, "File removed", pp))
                 {
-                    RecordChange(ctx, pp, attr, "Removal of '%s' recorded", path);
+                    if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_REMOVE))
+                    {
+                        RecordChange(ctx, pp, attr, "Removal of '%s' recorded", path);
+                    }
+                    else
+                    {
+                        SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                    }
                     *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
                 }
                 else
@@ -702,7 +731,14 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
             }
             else
             {
-                RecordChange(ctx, pp, attr, "Wrote stat information for '%s' to database", file);
+                if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_PERMS))
+                {
+                    RecordChange(ctx, pp, attr, "Wrote stat information for '%s' to database", file);
+                }
+                else
+                {
+                    SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                }
                 *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
             }
         }
@@ -725,8 +761,11 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
 
     if (cmpsb.st_mode != sb->st_mode)
     {
-        Log(LOG_LEVEL_NOTICE, "Permissions for '%s' changed %04jo -> %04jo",
-                 file, (uintmax_t)cmpsb.st_mode, (uintmax_t)sb->st_mode);
+        if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_PERMS))
+        {
+            Log(LOG_LEVEL_NOTICE, "Permissions for '%s' changed %04jo -> %04jo",
+                     file, (uintmax_t)cmpsb.st_mode, (uintmax_t)sb->st_mode);
+        }
 
         char msg_temp[CF_MAXVARSIZE];
         snprintf(msg_temp, sizeof(msg_temp), "Permission: %04jo -> %04jo",
@@ -736,7 +775,14 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
         {
             if (FileChangesLogChange(file, FILE_STATE_STATS_CHANGED, msg_temp, pp))
             {
-                RecordChange(ctx, pp, attr, "Recorded permissions changes in '%s'", file);
+                if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_PERMS))
+                {
+                    RecordChange(ctx, pp, attr, "Recorded permissions changes in '%s'", file);
+                }
+                else
+                {
+                    SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                }
                 *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
             }
             else
@@ -749,8 +795,11 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
 
     if (cmpsb.st_uid != sb->st_uid)
     {
-        Log(LOG_LEVEL_NOTICE, "Owner for '%s' changed %ju -> %ju",
-            file, (uintmax_t) cmpsb.st_uid, (uintmax_t) sb->st_uid);
+        if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_OWNER))
+        {
+            Log(LOG_LEVEL_NOTICE, "Owner for '%s' changed %ju -> %ju",
+                file, (uintmax_t) cmpsb.st_uid, (uintmax_t) sb->st_uid);
+        }
 
         char msg_temp[CF_MAXVARSIZE];
         snprintf(msg_temp, sizeof(msg_temp), "Owner: %ju -> %ju",
@@ -761,7 +810,14 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
         {
             if (FileChangesLogChange(file, FILE_STATE_STATS_CHANGED, msg_temp, pp))
             {
-                RecordChange(ctx, pp, attr, "Recorded ownership changes in '%s'", file);
+                if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_OWNER))
+                {
+                    RecordChange(ctx, pp, attr, "Recorded ownership changes in '%s'", file);
+                }
+                else
+                {
+                    SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                }
                 *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
             }
             else
@@ -774,8 +830,11 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
 
     if (cmpsb.st_gid != sb->st_gid)
     {
-        Log(LOG_LEVEL_NOTICE, "Group for '%s' changed %ju -> %ju",
-            file, (uintmax_t) cmpsb.st_gid, (uintmax_t) sb->st_gid);
+        if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_GROUP))
+        {
+            Log(LOG_LEVEL_NOTICE, "Group for '%s' changed %ju -> %ju",
+                file, (uintmax_t) cmpsb.st_gid, (uintmax_t) sb->st_gid);
+        }
 
         char msg_temp[CF_MAXVARSIZE];
         snprintf(msg_temp, sizeof(msg_temp), "Group: %ju -> %ju",
@@ -786,7 +845,14 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
         {
             if (FileChangesLogChange(file, FILE_STATE_STATS_CHANGED, msg_temp, pp))
             {
-                RecordChange(ctx, pp, attr, "Recorded group changes in '%s'", file);
+                if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_GROUP))
+                {
+                    RecordChange(ctx, pp, attr, "Recorded group changes in '%s'", file);
+                }
+                else
+                {
+                    SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                }
                 *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
             }
             else
@@ -799,8 +865,11 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
 
     if (cmpsb.st_dev != sb->st_dev)
     {
-        Log(LOG_LEVEL_NOTICE, "Device for '%s' changed %ju -> %ju",
-            file, (uintmax_t) cmpsb.st_dev, (uintmax_t) sb->st_dev);
+        if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_DEVICE))
+        {
+            Log(LOG_LEVEL_NOTICE, "Device for '%s' changed %ju -> %ju",
+                file, (uintmax_t) cmpsb.st_dev, (uintmax_t) sb->st_dev);
+        }
 
         char msg_temp[CF_MAXVARSIZE];
         snprintf(msg_temp, sizeof(msg_temp), "Device: %ju -> %ju",
@@ -810,7 +879,14 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
         {
             if (FileChangesLogChange(file, FILE_STATE_STATS_CHANGED, msg_temp, pp))
             {
-                RecordChange(ctx, pp, attr, "Recorded device changes in '%s'", file);
+                if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_DEVICE))
+                {
+                    RecordChange(ctx, pp, attr, "Recorded device changes in '%s'", file);
+                }
+                else
+                {
+                    SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                }
                 *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
             }
             else
@@ -823,8 +899,11 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
 
     if (cmpsb.st_ino != sb->st_ino)
     {
-        Log(LOG_LEVEL_NOTICE, "inode for '%s' changed %ju -> %ju",
-            file, (uintmax_t) cmpsb.st_ino, (uintmax_t) sb->st_ino);
+        if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_INODE))
+        {
+            Log(LOG_LEVEL_NOTICE, "inode for '%s' changed %ju -> %ju",
+                file, (uintmax_t) cmpsb.st_ino, (uintmax_t) sb->st_ino);
+        }
     }
 
     if (cmpsb.st_mtime != sb->st_mtime)
@@ -842,7 +921,10 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
         assert(strlen(from) == 24);
         assert(strlen(to) == 24);
 
-        Log(LOG_LEVEL_NOTICE, "Last modified time for '%s' changed '%s' -> '%s'", file, from, to);
+        if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_MTIME))
+        {
+            Log(LOG_LEVEL_NOTICE, "Last modified time for '%s' changed '%s' -> '%s'", file, from, to);
+        }
 
         char msg_temp[CF_MAXVARSIZE];
         snprintf(msg_temp, sizeof(msg_temp), "Modified time: %s -> %s",
@@ -852,7 +934,14 @@ void FileChangesCheckAndUpdateStats(EvalContext *ctx,
         {
             if (FileChangesLogChange(file, FILE_STATE_STATS_CHANGED, msg_temp, pp))
             {
-                RecordChange(ctx, pp, attr, "Recorded mtime changes in '%s'", file);
+                if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_MTIME))
+                {
+                    RecordChange(ctx, pp, attr, "Recorded mtime changes in '%s'", file);
+                }
+                else
+                {
+                    SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+                }
                 *result = PromiseResultUpdate(*result, PROMISE_RESULT_CHANGE);
             }
             else

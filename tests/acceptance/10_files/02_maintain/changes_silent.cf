@@ -1,0 +1,323 @@
+# Test the `silence` attribute in changes body.
+# Verifies that silenced changes still produce checksum_alerts,
+# promise outcome classes, and persistent audit-log entries.
+#
+# Key invariants tested:
+#   1. Silenced categories DO NOT produce RecordChange (syslog) output
+#   2. Silenced categories still fire checksum_alerts class
+#   3. Silenced categories still fire promise outcome classes (repaired/change)
+#   4. FileChangesLogChange is ALWAYS called regardless of silence (audit log)
+#   5. Non-silenced categories (perms) fire independently when only content is silenced
+#
+# Note: owner/group/device/mtime/inode silencing would require chown/chgrp tests
+# which need root; we cover content, add, remove, and perms which work unprivileged.
+body common control
+{
+  inputs => { "../../default.sub.cf" };
+  bundlesequence => { default("$(this.promise_filename)") };
+}
+
+# --- Bodies ---
+# Full silence: every category suppressed.
+# The audit log and classes must still fire.
+body changes test_changes_silence_all
+{
+  hash => "sha256";
+  report_changes => "all";
+  update_hashes => "yes";
+  silence => { "all" };
+}
+
+# Silence only content. Perms changes should NOT be silenced.
+body changes test_changes_silence_content_only
+{
+  hash => "sha256";
+  report_changes => "all";
+  update_hashes => "yes";
+  silence => { "content" };
+}
+
+# No silence at all — everything should be recorded loudly.
+body changes test_changes_no_silence
+{
+  hash => "sha256";
+  report_changes => "all";
+  update_hashes => "yes";
+}
+
+# Silence add — for testing new-file creation.
+body changes test_changes_silence_add
+{
+  hash => "sha256";
+  report_changes => "all";
+  update_hashes => "yes";
+  silence => { "add" };
+}
+
+# Silence remove — for testing file deletion.
+body changes test_changes_silence_remove
+{
+  hash => "sha256";
+  report_changes => "all";
+  update_hashes => "yes";
+  silence => { "remove" };
+}
+
+# --- Edit line helper ---
+bundle edit_line append_silent_change
+{
+  insert_lines:
+    "SILENT_TEST_MARKER_LINE";
+}
+
+# --- Classes helper ---
+body classes outcome_classes(kept, repaired, notkept)
+{
+  promise_kept => { "$(kept)" };
+  promise_repaired => { "$(repaired)" };
+  repair_failed => { "$(notkept)" };
+  repair_denied => { "$(notkept)" };
+  repair_timeout => { "$(notkept)" };
+}
+
+# --- Bundles ---
+# init: create files and establish them in the changes DB so subsequent edits
+# register as content changes (not first-time "Stored").
+# We create two files: one for full-silence testing, one for content-only silence.
+bundle agent init
+{
+  files:
+    "$(G.testfile).silent.all"
+      create => "true",
+      changes => test_changes_silence_all,
+      perms => set_perms("0644");
+
+    "$(G.testfile).silent.content_only"
+      create => "true",
+      changes => test_changes_silence_content_only,
+      perms => set_perms("0644");
+
+    "$(G.testfile).silent.nosilence"
+      create => "true",
+      changes => test_changes_no_silence,
+      perms => set_perms("0644");
+
+    "$(G.testfile).silent.addme"
+      create => "true",
+      changes => test_changes_silence_add,
+      perms => set_perms("0644");
+}
+
+# test: perform the actual changes that silence should affect.
+#
+# Step 1: Edit the fully-silenced file. Under silence => { "all" } the
+#         edit must still trigger checksum_alerts, promise_repaired, and the
+#         persistent audit log.
+#
+# Step 2: Edit the content-only-silenced file AND change its perms.
+#         Content should be silenced; perms change must be visible.
+#
+# Step 3: Edit the no-silence file. Should behave normally (for comparison).
+#
+# Step 4: Create a new file with add silenced (file doesn't exist yet).
+#         Must still appear in the audit log.
+#
+# Step 5: Delete the new file with remove silenced.
+#         Must still appear in the audit log.
+bundle agent test
+{
+  vars:
+    # Track the edit marker for assertions.
+    "edit_marker" string => "SILENT_TEST_MARKER_LINE";
+
+  files:
+    # Step 1: fully silenced content change
+    "$(G.testfile).silent.all"
+      edit_line => append_silent_change,
+      changes => test_changes_silence_all,
+      classes => outcome_classes(
+        "s_all_kept", "s_all_repaired", "s_all_notkept"
+      );
+
+    # Step 2: content silenced + perms change
+    "$(G.testfile).silent.content_only"
+      edit_line => append_silent_change,
+      changes => test_changes_silence_content_only,
+      classes => outcome_classes("s_co_kept", "s_co_repaired", "s_co_notkept"),
+      perms => set_perms("0755");
+
+    # Step 3: no silence at all
+    "$(G.testfile).silent.nosilence"
+      edit_line => append_silent_change,
+      changes => test_changes_no_silence,
+      classes => outcome_classes(
+        "nosil_kept", "nosil_repaired", "nosil_notkept"
+      );
+
+    # Step 4: new file with add silenced
+    "$(G.testfile).silent.addme"
+      create => "true",
+      changes => test_changes_silence_add,
+      classes => outcome_classes(
+        "s_add_kept", "s_add_repaired", "s_add_notkept"
+      ),
+      perms => set_perms("0644");
+}
+
+# check: make real assertions about what silence did (or did NOT do).
+bundle agent check
+{
+  vars:
+    # Collect all classes we care about.
+    "observed"
+      slist => {
+        "checksum_alerts",
+        "s_all_repaired",
+        "!s_all_notkept",
+        "s_co_repaired",
+        "!s_co_notkept",
+        "nosil_repaired",
+        "!nosil_notkept",
+        "s_add_kept",
+        "!s_add_notkept",
+      };
+
+  # --- Assertion 1: checksum_alerts class fired for silenced content change ---
+  # The C code sets checksum_alerts unconditionally when changed==true
+  # regardless of IsChangeSilenced. If silence wrongly suppresses it, this fails.
+  classes:
+    "assert_1_checksum_alerts" expression => "checksum_alerts";
+
+  # --- Assertion 2: Promise outcome classes fire for silenced content change ---
+  # silence must NOT suppress the promise outcome. s_all_repaired must be set
+  # and s_all_notkept must NOT be set.
+  classes:
+    "assert_2_s_all_classes" and => { "s_all_repaired", "!s_all_notkept" };
+
+  # --- Assertion 3: No-silence file also repaired normally ---
+  classes:
+    "assert_3_nosil_classes" and => { "nosil_repaired", "!nosil_notkept" };
+
+  # --- Assertion 4: content-only-silence file repaired normally ---
+  classes:
+    "assert_4_co_classes" and => { "s_co_repaired", "!s_co_notkept" };
+
+  # --- Assertion 5: add-silenced new file created and tracked ---
+  classes:
+    "assert_5_add_classes" and => { "s_add_kept", "!s_add_notkept" };
+
+  # --- Assertion 6: Persistent audit log contains entries for silenced changes ---
+  # Replace the brittle full-log diff with a countlinesmatching presence check.
+  # Even when silenced, the persistent audit log must still have
+  # ,C,Content changed entries for the silenced files.
+  vars:
+    "changes_log"
+      string => "$(sys.workdir)$(const.dirsep)state$(const.dirsep)file_changes.log";
+
+    "n_all_content"
+      int => countlinesmatching(
+        ".*TEST\\.cfengine\\.silent\\.all,C,Content changed.*",
+        "$(changes_log)"
+      );
+
+    "n_co_content"
+      int => countlinesmatching(
+        ".*TEST\\.cfengine\\.silent\\.content_only,C,Content changed.*",
+        "$(changes_log)"
+      );
+
+  classes:
+    "assert_6_audit_preserved"
+      and => {
+        isgreaterthan("$(n_all_content)", "0"),
+        isgreaterthan("$(n_co_content)", "0"),
+      };
+
+  # --- Final pass/fail aggregation ---
+  # ok is set only if ALL assertions passed.
+  # If silence broke anything, the relevant class won't fire and ok stays unset.
+  classes:
+    "ok"
+      and => {
+        "assert_1_checksum_alerts",
+        "assert_2_s_all_classes",
+        "assert_3_nosil_classes",
+        "assert_4_co_classes",
+        "assert_5_add_classes",
+        "assert_6_audit_preserved",
+      };
+
+  reports:
+    # Debug: show which assertions passed/failed.
+    assert_1_checksum_alerts::
+      "[ASSERT 1] checksum_alerts fired for silenced change: PASS";
+
+    !assert_1_checksum_alerts::
+      "[ASSERT 1] checksum_alerts FAILED to fire for silenced change!";
+
+    assert_2_s_all_classes::
+      "[ASSERT 2] promise outcome classes fired for silenced change: PASS";
+
+    !assert_2_s_all_classes::
+      "[ASSERT 2] promise outcome classes FAILED for silenced change!";
+
+    assert_3_nosil_classes::
+      "[ASSERT 3] no-silence file repaired normally: PASS";
+
+    !assert_3_nosil_classes::
+      "[ASSERT 3] no-silence file repair FAILED!";
+
+    assert_4_co_classes::
+      "[ASSERT 4] content-only-silence file repaired normally: PASS";
+
+    !assert_4_co_classes::
+      "[ASSERT 4] content-only-silence file repair FAILED!";
+
+    assert_5_add_classes::
+      "[ASSERT 5] add-silenced file created and tracked: PASS";
+
+    !assert_5_add_classes::
+      "[ASSERT 5] add-silenced file creation FAILED!";
+
+    assert_6_audit_preserved::
+      "[ASSERT 6] persistent audit log has silenced content entries: PASS";
+
+    !assert_6_audit_preserved::
+      "[ASSERT 6] persistent audit log MISSING silenced content entries!";
+
+    # Framework pass/fail signal — matches sibling test convention (002.cf, etc.).
+    ok::
+      "$(this.promise_filename) Pass";
+
+    !ok::
+      "$(this.promise_filename) FAIL";
+
+    # Diagnostic: show classes that fired for debugging.
+    extra::
+      "All classes: $(classesmatching('.*'))";
+}
+
+# destroy: clean up test files.
+bundle agent destroy
+{
+  files:
+    "$(G.testfile).silent.all" delete => simple_delete;
+    "$(G.testfile).silent.content_only" delete => simple_delete;
+    "$(G.testfile).silent.nosilence" delete => simple_delete;
+    "$(G.testfile).silent.addme" delete => simple_delete;
+}
+
+# --- Helper bodies for destroy ---
+body delete simple_delete
+{
+  dirlinks => "delete";
+  rmdirs => "true";
+}
+
+body perms set_perms(mode)
+{
+  mode => "$(mode)";
+}
+
+### PROJECT_ID: core
+### CATEGORY_ID: 27

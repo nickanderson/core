@@ -27,6 +27,9 @@
 
 #include <promises.h>
 
+/* Returns true if the given change category should be silenced. */
+bool IsChangeSilenced(const Attributes *attr, FileChangeSilence category);
+
 typedef enum
 {
     FILE_STATE_NEW,
@@ -44,7 +47,7 @@ bool FileChangesCheckAndUpdateHash(EvalContext *ctx,
                                    const Promise *pp,
                                    PromiseResult *result);
 bool FileChangesGetDirectoryList(const char *path, Seq *files);
-bool FileChangesLogNewFile(const char *path, const Promise *pp);
+bool FileChangesLogNewFile(const char *path, const Promise *pp, bool silent);
 void FileChangesCheckAndUpdateDirectory(EvalContext *ctx, const Attributes *attr,
                                         const char *name, const Seq *file_set, const Seq *db_file_set,
                                         bool update, const Promise *pp, PromiseResult *result);

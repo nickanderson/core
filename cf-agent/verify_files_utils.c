@@ -2996,7 +2996,7 @@ bool DepthSearch(EvalContext *ctx, char *name, const struct stat *sb, int rlevel
                 {
                     // See comments in FileChangesCheckAndUpdateDirectory(),
                     // regarding this function call.
-                    FileChangesLogNewFile(path, pp);
+                    FileChangesLogNewFile(path, pp, IsChangeSilenced(attr, FILE_CHANGE_SILENCE_ADD));
                 }
                 SeqAppend(selected_files, xstrdup(dirp->d_name));
             }
@@ -3726,7 +3726,14 @@ static PromiseResult VerifyFileIntegrity(EvalContext *ctx, const char *file, con
         EvalContextClassPutSoft(ctx, "checksum_alerts", CONTEXT_SCOPE_NAMESPACE, "");
         if (FileChangesLogChange(file, FILE_STATE_CONTENT_CHANGED, "Content changed", pp))
         {
-            RecordChange(ctx, pp, attr, "Recorded integrity changes in '%s'", file);
+            if (!IsChangeSilenced(attr, FILE_CHANGE_SILENCE_CONTENT))
+            {
+                RecordChange(ctx, pp, attr, "Recorded integrity changes in '%s'", file);
+            }
+            else
+            {
+                SetPromiseOutcomeClasses(ctx, PROMISE_RESULT_CHANGE, &(attr->classes));
+            }
             result = PromiseResultUpdate(result, PROMISE_RESULT_CHANGE);
         }
         else

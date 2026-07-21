@@ -778,6 +778,30 @@ typedef enum
     FILE_CHANGE_REPORT_ALL
 } FileChangeReport;
 
+/*************************************************************************/
+
+typedef enum
+{
+    FILE_CHANGE_SILENCE_NONE    = 0,
+    FILE_CHANGE_SILENCE_CONTENT = (1 << 0),
+    FILE_CHANGE_SILENCE_ADD     = (1 << 1),
+    FILE_CHANGE_SILENCE_REMOVE  = (1 << 2),
+    FILE_CHANGE_SILENCE_OWNER   = (1 << 3),
+    FILE_CHANGE_SILENCE_GROUP   = (1 << 4),
+    FILE_CHANGE_SILENCE_PERMS   = (1 << 5),
+    FILE_CHANGE_SILENCE_DEVICE  = (1 << 6),
+    FILE_CHANGE_SILENCE_MTIME   = (1 << 7),
+    FILE_CHANGE_SILENCE_INODE   = (1 << 8),
+    FILE_CHANGE_SILENCE_ALL     = (FILE_CHANGE_SILENCE_CONTENT | FILE_CHANGE_SILENCE_ADD | \
+                                   FILE_CHANGE_SILENCE_REMOVE | FILE_CHANGE_SILENCE_OWNER | \
+                                   FILE_CHANGE_SILENCE_GROUP | FILE_CHANGE_SILENCE_PERMS | \
+                                   FILE_CHANGE_SILENCE_DEVICE | FILE_CHANGE_SILENCE_MTIME | \
+                                   FILE_CHANGE_SILENCE_INODE),
+    FILE_CHANGE_SILENCE_DEFAULT = FILE_CHANGE_SILENCE_NONE
+} FileChangeSilence;
+
+/*************************************************************************/
+
 typedef enum
 {
     PACKAGE_ACTION_ADD,
@@ -1103,6 +1127,7 @@ typedef struct
     FileChangeReport report_changes;
     int report_diffs;
     int update;
+    unsigned int silence;
 } FileChange;
 
 /*************************************************************************/
